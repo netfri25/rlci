@@ -1,3 +1,4 @@
+use std::ops::Deref;
 
 // TODO: store the position in the file for better error reporting
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,12 +21,20 @@ impl<'a> Token<'a> {
     }
 }
 
+impl Deref for Token<'_> {
+    type Target = TokenKind;
+
+    fn deref(&self) -> &Self::Target {
+        &self.kind
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     Ident,
     IntLit,
     FloatLit,
-    Win, // boolean true
+    Win,  // boolean true
     Fail, // boolean false
 
     // keywords
@@ -37,15 +46,32 @@ pub enum TokenKind {
     A,
 
     // types
-    Noob,    // nil
-    Troof,   // boolean
-    Numbr,   // integer
-    Numbar,  // float
-    Yarn,    // string
-    Bukkit,  // object
+    Noob,   // nil
+    Troof,  // boolean
+    Numbr,  // integer
+    Numbar, // float
+    Yarn,   // string
+    Bukkit, // object
 
     // specials
     NewLine, // suggested by Nitay to be called `NewLine` instead of `Newline`
     Eof,
     Invalid,
+}
+
+impl TokenKind {
+    pub fn is_scope(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, Ident | I)
+    }
+
+    pub fn is_seperator(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, NewLine)
+    }
+
+    pub fn is_valid(&self) -> bool {
+        use TokenKind::*;
+        !matches!(self, Eof | Invalid)
+    }
 }
