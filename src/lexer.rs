@@ -165,6 +165,7 @@ impl<'a> Iterator for Lexer<'a> {
 mod tests {
     use super::*;
     use TokenKind::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     pub fn keywords() {
