@@ -11,9 +11,9 @@ impl<'a> Lexer<'a> {
 
     /// returns None when tokenizing has failed.
     /// if the lexer has eached the end of the input, it will return the Eof token
-    pub fn next_token(&mut self) -> Option<Token<'a>> {
+    pub fn next_token(&mut self) -> Token<'a> {
         if self.input.is_empty() {
-            return Some(self.new_token(0, TokenKind::Eof));
+            return self.new_token(0, TokenKind::Eof);
         }
 
         let methods = [
@@ -27,9 +27,11 @@ impl<'a> Lexer<'a> {
         ];
 
         self.skip_whitespace();
-        let token = methods.into_iter().find_map(|method| method(self))?;
+        let Some(token) = methods.into_iter().find_map(|method| method(self)) else {
+            return self.new_token(0, TokenKind::Invalid);
+        };
         self.consume(token.text().len());
-        Some(token)
+        token
     }
 
     fn consume(&mut self, len: usize) {
@@ -150,7 +152,12 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Token<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_token().filter(|tkn| tkn.kind() != TokenKind::Eof)
+        let tkn = self.next_token();
+        if [TokenKind::Invalid, TokenKind::Eof].contains(&tkn.kind()) {
+            None
+        } else {
+            Some(tkn)
+        }
     }
 }
 

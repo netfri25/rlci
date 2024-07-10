@@ -47,4 +47,5 @@ pub enum TokenKind {
     // specials
     NewLine, // suggested by Nitay to be called `NewLine` instead of `Newline`
     Eof,
+    Invalid,
 }
