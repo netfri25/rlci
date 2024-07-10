@@ -21,9 +21,9 @@ impl<'a> Lexer<'a> {
             Self::lex_ident,
             Self::lex_type,
             Self::lex_keyword,
-            Self::lex_boollit,
-            Self::lex_floatlit,
-            Self::lex_intlit,
+            Self::lex_bool_lit,
+            Self::lex_float_lit,
+            Self::lex_int_lit,
         ];
 
         self.skip_whitespace();
@@ -95,7 +95,7 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    fn lex_boollit(&self) -> Option<Token<'a>> {
+    fn lex_bool_lit(&self) -> Option<Token<'a>> {
         use TokenKind::*;
         const LITS: &[(&str, TokenKind)] = &[("WIN", Win), ("FAIL", Fail)];
 
@@ -105,7 +105,7 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    fn lex_intlit(&self) -> Option<Token<'a>> {
+    fn lex_int_lit(&self) -> Option<Token<'a>> {
         let mut is_first = true;
         let len = self.count_while(|&c| {
             let b = (is_first && c == '-') || c.is_ascii_digit();
@@ -116,7 +116,7 @@ impl<'a> Lexer<'a> {
         (len > 0).then(|| self.new_token(len, TokenKind::IntLit))
     }
 
-    fn lex_floatlit(&self) -> Option<Token<'a>> {
+    fn lex_float_lit(&self) -> Option<Token<'a>> {
         let mut is_first = true;
         let mut has_dot = false;
         let len = self.count_while(|&c| {
