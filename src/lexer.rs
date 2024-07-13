@@ -2,11 +2,15 @@ use crate::token::{Token, TokenKind};
 
 pub struct Lexer<'a> {
     input: &'a str,
+    last_was_newline: bool,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self { input }
+        Self {
+            input,
+            last_was_newline: false,
+        }
     }
 
     /// returns None when tokenizing has failed.
@@ -26,12 +30,20 @@ impl<'a> Lexer<'a> {
             Self::lex_int_lit,
         ];
 
-        self.skip_whitespace();
+        // also skips whitespace
+        self.skip_comments();
         let Some(token) = methods.into_iter().find_map(|method| method(self)) else {
             return self.new_token(0, TokenKind::Invalid);
         };
         self.consume(token.text().len());
-        token
+
+        let is_newline = token.kind() == TokenKind::NewLine;
+        if self.last_was_newline && is_newline {
+            self.next_token()
+        } else {
+            self.last_was_newline = is_newline;
+            token
+        }
     }
 
     fn consume(&mut self, len: usize) {
@@ -42,6 +54,30 @@ impl<'a> Lexer<'a> {
         // not skipping newline since it's considered to be a token
         let len = self.count_while(|c| *c != '\n' && c.is_ascii_whitespace());
         self.consume(len)
+    }
+
+    // skips both whitespace and comments
+    // returns false when there's an unclosed block comment
+    fn skip_comments(&mut self) -> bool {
+        loop {
+            self.skip_whitespace();
+            let len = if self.starts_with("BTW") {
+                self.count_while(|c| *c != '\n')
+            } else if self.starts_with("OBTW") {
+                let finish = "TLDR";
+                let Some(distance) = self.count_to(finish) else {
+                    return false;
+                };
+                distance + finish.len()
+            } else {
+                break
+            };
+
+            self.consume(len);
+        };
+
+        self.skip_whitespace();
+        true
     }
 
     // newline contains a chunk of whitespaces with one or more newlines in between
@@ -143,6 +179,10 @@ impl<'a> Lexer<'a> {
         self.input.starts_with(text)
     }
 
+    fn count_to(&self, text: &str) -> Option<usize> {
+        self.input.find(text)
+    }
+
     fn new_token(&self, len: usize, kind: TokenKind) -> Token<'a> {
         Token::new(kind, &self.input[..len])
     }
@@ -164,8 +204,8 @@ impl<'a> Iterator for Lexer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use TokenKind::*;
     use pretty_assertions::assert_eq;
+    use TokenKind::*;
 
     #[test]
     pub fn keywords() {
@@ -214,6 +254,32 @@ mod tests {
                 Token::new(TokenKind::IntLit, "-2948"),
                 Token::new(TokenKind::FloatLit, "0.234"),
                 Token::new(TokenKind::FloatLit, "-1234234.3"),
+            ]
+        )
+    }
+
+    #[test]
+    fn comments() {
+        let input = "BTW WIN FAIL\nOBTW 209348 -2948 0.234 TLDR  \n-1234234.3";
+        let tkns = lex(input);
+        assert_eq!(
+            tkns,
+            vec![
+                Token::new(TokenKind::NewLine, "\n"),
+                Token::new(TokenKind::FloatLit, "-1234234.3"),
+            ]
+        )
+    }
+
+    #[test]
+    fn unclosed_comment() {
+        let input = "WIN FAIL OBTW WIN FAIL";
+        let tkns = lex(input);
+        assert_eq!(
+            tkns,
+            vec![
+                Token::new(TokenKind::Win, "WIN"),
+                Token::new(TokenKind::Fail, "FAIL"),
             ]
         )
     }
