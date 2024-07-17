@@ -8,7 +8,7 @@ pub struct Interpreter<'a> {
     it: Object,
 }
 
-pub type Result<T> = ::std::result::Result<T, InterpreterError>;
+pub type Result<T> = ::std::result::Result<T, Error>;
 
 impl<'a> Interpreter<'a> {
     pub fn new() -> Self {
@@ -88,11 +88,11 @@ pub fn default_of(typ: ast::Type) -> Object {
 }
 
 #[derive(Debug)]
-pub enum InterpreterError {
+pub enum Error {
     NoParentScope,
     VariableDoesNotExist(String),
 }
-use InterpreterError::*;
+use Error::*;
 
 #[cfg(test)]
 mod tests {
