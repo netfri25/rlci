@@ -47,7 +47,7 @@ pub enum Scope<'a> {
     Var(Ident<'a>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident<'a>(pub &'a str);
 
 #[derive(Debug, Clone, PartialEq)]
