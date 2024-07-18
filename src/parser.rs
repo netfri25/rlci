@@ -19,7 +19,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Module = 'HAI' FloatLit Sep ( Stmt Sep )* 'KTHXBYE'
     pub fn parse_module(&mut self) -> Option<Module<'a>> {
         if self.peek(0).is_seperator() {
             self.parse_seperator();
@@ -87,8 +86,6 @@ impl<'a> Parser<'a> {
         self.expect_pred(|kind| kind == expected_kind)
     }
 
-    // Stmt = DeclareVar
-    //      | Expr
     fn parse_stmt(&mut self) -> Option<Stmt<'a>> {
         match self.peek(0) {
             tkn if tkn.is_scope() && self.peek(1) == TokenKind::HasA => {
@@ -98,7 +95,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // DeclareVar = Scope 'HAS A' Ident DeclareVarKind
     fn parse_declare_var(&mut self) -> Option<DeclareVar<'a>> {
         let scope = self.parse_scope()?;
         self.expect(TokenKind::HasA)?;
@@ -107,10 +103,6 @@ impl<'a> Parser<'a> {
         Some(DeclareVar { scope, name, kind })
     }
 
-    // (can be nothing)
-    // DeclareVarKind = ''
-    //                | 'ITZ' Expr
-    //                | 'ITZ A' Type
     fn parse_declare_var_kind(&mut self) -> Option<DeclareVarKind<'a>> {
         if self.peek(0).is_seperator() {
             return Some(DeclareVarKind::Empty);
@@ -126,12 +118,6 @@ impl<'a> Parser<'a> {
         self.parse_type().map(DeclareVarKind::WithType)
     }
 
-    // Type = 'NOOB'
-    //      | 'TROOF'
-    //      | 'NUMBR'
-    //      | 'NUMBAR'
-    //      | 'YARN'
-    //      | 'BUKKIT'
     fn parse_type(&mut self) -> Option<Type> {
         let typ = match self.peek(0) {
             TokenKind::Noob => Type::Noob,
@@ -147,8 +133,6 @@ impl<'a> Parser<'a> {
         Some(typ)
     }
 
-    // Ident = [a-z] ([a-z] | [0-9] | '_')*
-    //       | 'SRS' Expr
     fn parse_ident(&mut self) -> Option<Ident<'a>> {
         match self.peek(0) {
             TokenKind::Ident => {
@@ -164,8 +148,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Scope = 'I'
-    //       | Ident
     fn parse_scope(&mut self) -> Option<Scope<'a>> {
         match self.peek(0) {
             TokenKind::I => {
@@ -177,9 +159,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Expr = Ident
-    //      | IntLit
-    //      | FloatLit
     fn parse_expr(&mut self) -> Option<Expr<'a>> {
         match self.peek(0) {
             TokenKind::Ident => self.parse_ident().map(Expr::Ident),
@@ -190,13 +169,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Sep = '\n'
     fn parse_seperator(&mut self) -> Option<Seperator> {
         self.expect_pred(|kind| kind.is_seperator())?;
         Some(Seperator)
     }
 
-    // IntLit = '-'? [0-9]+
     fn parse_int_lit(&mut self) -> Option<IntLit> {
         let tkn = self.expect(TokenKind::IntLit)?;
         match tkn.text().parse() {
@@ -208,7 +185,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // FloatLit = '-'? [0-9]* ('.' [0-9]*)?
     fn parse_float_lit(&mut self) -> Option<FloatLit> {
         let tkn = self.expect(TokenKind::FloatLit)?;
         match tkn.text().parse() {
@@ -220,7 +196,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // BoolLit = 'WIN' | 'FAIL'
     fn parse_bool_lit(&mut self) -> Option<BoolLit> {
         let kind = self.peek(0);
         let bool_lit = match kind {
