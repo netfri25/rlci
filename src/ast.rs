@@ -48,8 +48,11 @@ pub enum Scope<'a> {
     Var(Ident<'a>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Ident<'a>(pub &'a str);
+#[derive(Debug, Clone, PartialEq)]
+pub enum Ident<'a> {
+    Literal(&'a str),
+    Srs(Box<Expr<'a>>),
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntLit(pub i64);

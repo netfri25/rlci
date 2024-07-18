@@ -108,6 +108,7 @@ impl<'a> Lexer<'a> {
             ("ITZ", Itz),
             ("I", I),
             ("A", A),
+            ("SRS", Srs),
         ];
 
         KEYWORDS.iter().find_map(|(keyword, kind)| {
@@ -209,7 +210,7 @@ mod tests {
 
     #[test]
     pub fn keywords() {
-        let input = "HAI I HAS A KTHXBYE ITZ A";
+        let input = "HAI I HAS A KTHXBYE ITZ A SRS";
         let tkns = lex(input);
         assert_eq!(
             tkns,
@@ -220,6 +221,7 @@ mod tests {
                 Token::new(KThxBye, "KTHXBYE"),
                 Token::new(Itz, "ITZ"),
                 Token::new(A, "A"),
+                Token::new(Srs, "SRS"),
             ]
         )
     }

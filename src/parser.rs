@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, Scope, Seperator, Stmt, Type,
+    BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, Scope, Seperator, Stmt, Type
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -32,7 +32,6 @@ impl<'a> Parser<'a> {
         let mut stmts = Vec::new();
 
         while self.peek(0) != TokenKind::KThxBye {
-            dbg!(&self.peek_queue);
             if let Some(stmt) = self.parse_stmt() {
                 stmts.push(stmt);
             } else {
@@ -149,9 +148,20 @@ impl<'a> Parser<'a> {
     }
 
     // Ident = [a-z] ([a-z] | [0-9] | '_')*
+    //       | 'SRS' Expr
     fn parse_ident(&mut self) -> Option<Ident<'a>> {
-        let tkn = self.expect(TokenKind::Ident)?;
-        Some(Ident(tkn.text()))
+        match self.peek(0) {
+            TokenKind::Ident => {
+                let tkn = self.next_token();
+                Some(Ident::Literal(tkn.text()))
+            }
+            TokenKind::Srs => {
+                let _srs = self.next_token();
+                let expr = self.parse_expr()?;
+                Some(Ident::Srs(Box::new(expr)))
+            }
+            _ => None,
+        }
     }
 
     // Scope = 'I'
@@ -235,6 +245,7 @@ mod tests {
             I HAS A var
             var HAS A var ITZ -12.3
             I HAS A var ITZ A TROOF
+            I HAS A SRS var ITZ WIN
         KTHXBYE
         "#;
         let got = parse(input);
@@ -243,18 +254,23 @@ mod tests {
             stmts: vec![
                 Stmt::DeclareVar(DeclareVar {
                     scope: Scope::Current,
-                    name: Ident("var"),
+                    name: Ident::Literal("var"),
                     kind: DeclareVarKind::Empty,
                 }),
                 Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Var(Ident("var")),
-                    name: Ident("var"),
+                    scope: Scope::Var(Ident::Literal("var")),
+                    name: Ident::Literal("var"),
                     kind: DeclareVarKind::WithExpr(Expr::FloatLit(FloatLit(-12.3))),
                 }),
                 Stmt::DeclareVar(DeclareVar {
                     scope: Scope::Current,
-                    name: Ident("var"),
+                    name: Ident::Literal("var"),
                     kind: DeclareVarKind::WithType(Type::Troof),
+                }),
+                Stmt::DeclareVar(DeclareVar {
+                    scope: Scope::Current,
+                    name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
+                    kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
                 }),
             ],
         };

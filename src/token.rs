@@ -44,6 +44,7 @@ pub enum TokenKind {
     KThxBye,
     Itz,
     A,
+    Srs,
 
     // types
     Noob,   // nil

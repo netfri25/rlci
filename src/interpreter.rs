@@ -3,26 +3,26 @@ use crate::object::Object;
 use crate::scope::Scope;
 
 #[derive(Debug, Default, PartialEq)]
-pub struct Interpreter<'a> {
-    scope: Scope<'a>,
-    it: Object,
+pub struct Interpreter {
+    pub scope: Scope,
+    pub it: Object,
 }
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
-impl<'a> Interpreter<'a> {
+impl Interpreter {
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn interpret_module(&mut self, module: ast::Module<'a>) -> Result<()> {
+    pub fn interpret_module(&mut self, module: ast::Module) -> Result<()> {
         for stmt in module.stmts {
             self.interpret_stmt(stmt)?
         }
         Ok(())
     }
 
-    fn interpret_stmt(&mut self, stmt: ast::Stmt<'a>) -> Result<()> {
+    fn interpret_stmt(&mut self, stmt: ast::Stmt) -> Result<()> {
         match stmt {
             ast::Stmt::Expr(expr) => {
                 self.it = self.interpret_expr(expr)?;
@@ -32,15 +32,20 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn interpret_expr(&mut self, expr: ast::Expr<'a>) -> Result<Object> {
+    fn interpret_expr(&mut self, expr: ast::Expr) -> Result<Object> {
         match expr {
-            ast::Expr::Ident(name) => self.lookup(&name),
+            ast::Expr::Ident(ident) => {
+                let name = self.eval_ident(ident)?;
+                self.lookup(&name)
+            }
             ast::Expr::IntLit(ast::IntLit(value)) => Ok(Object::Numbr(value)),
             ast::Expr::FloatLit(ast::FloatLit(value)) => Ok(Object::Numbar(value)),
+            ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
         }
     }
 
-    fn interpret_declare_var(&mut self, decl_var: ast::DeclareVar<'a>) -> Result<()> {
+
+    fn interpret_declare_var(&mut self, decl_var: ast::DeclareVar) -> Result<()> {
         let ast::DeclareVar { scope, name, kind } = decl_var;
 
         if scope != ast::Scope::Current {
@@ -53,8 +58,16 @@ impl<'a> Interpreter<'a> {
             ast::DeclareVarKind::WithExpr(expr) => self.interpret_expr(expr)?,
         };
 
+        let name = self.eval_ident(name)?;
         self.scope.define(name, value);
         Ok(())
+    }
+
+    fn eval_ident(&mut self, ident: ast::Ident) -> Result<String> {
+        Ok(match ident {
+            ast::Ident::Literal(lit) => lit.to_string(),
+            ast::Ident::Srs(expr) => self.interpret_expr(*expr)?.to_string(),
+        })
     }
 
     fn start_scope(&mut self) {
@@ -68,11 +81,11 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    fn lookup(&self, name: &ast::Ident<'a>) -> Result<Object> {
+    fn lookup(&self, name: &str) -> Result<Object> {
         self.scope
             .lookup(name)
             .cloned()
-            .ok_or_else(|| VariableDoesNotExist(name.0.to_string()))
+            .ok_or_else(|| VariableDoesNotExist(name.to_string()))
     }
 }
 
@@ -108,6 +121,7 @@ mod tests {
             I HAS A var
             I HAS A var2 ITZ -12.3
             I HAS A var3 ITZ A TROOF
+            I HAS A SRS var3 ITZ WIN
         KTHXBYE
         "#;
         let module = parse(input).unwrap();
@@ -118,9 +132,10 @@ mod tests {
             Interpreter {
                 scope: Scope::new(
                     [
-                        (ast::Ident("var"), Object::Noob),
-                        (ast::Ident("var2"), Object::Numbar(-12.3)),
-                        (ast::Ident("var3"), Object::Troof(false)),
+                        ("var".into(), Object::Noob),
+                        ("var2".into(), Object::Numbar(-12.3)),
+                        ("var3".into(), Object::Troof(false)),
+                        ("FAIL".into(), Object::Troof(true)),
                     ],
                     None
                 ),
