@@ -175,6 +175,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident => self.parse_ident().map(Expr::Ident),
             TokenKind::IntLit => self.parse_int_lit().map(Expr::IntLit),
             TokenKind::FloatLit => self.parse_float_lit().map(Expr::FloatLit),
+            TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
             _ => None, // TODO: report error
         }
     }
@@ -207,6 +208,18 @@ impl<'a> Parser<'a> {
                 None
             }
         }
+    }
+
+    // BoolLit = 'WIN' | 'FAIL'
+    fn parse_bool_lit(&mut self) -> Option<BoolLit> {
+        let kind = self.peek(0);
+        let bool_lit = match kind {
+            TokenKind::Win => BoolLit(true),
+            TokenKind::Fail => BoolLit(false),
+            _ => return None,
+        };
+        self.next_token();
+        Some(bool_lit)
     }
 }
 

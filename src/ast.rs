@@ -15,6 +15,7 @@ pub enum Expr<'a> {
     Ident(Ident<'a>),
     IntLit(IntLit),
     FloatLit(FloatLit),
+    BoolLit(BoolLit),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,6 +56,9 @@ pub struct IntLit(pub i64);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatLit(pub f64);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoolLit(pub bool);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Seperator;
