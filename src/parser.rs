@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, Scope,
-    Seperator, Stmt, Type,
+    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit, Scope, Seperator, Stmt, Type
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -176,6 +175,7 @@ impl<'a> Parser<'a> {
             TokenKind::IntLit => self.parse_int_lit().map(Expr::IntLit),
             TokenKind::FloatLit => self.parse_float_lit().map(Expr::FloatLit),
             TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
+            TokenKind::Noob => self.parse_noob_lit().map(Expr::NoobLit),
             _ => None, // TODO: report error
         }
     }
@@ -216,6 +216,11 @@ impl<'a> Parser<'a> {
         };
         self.next_token();
         Some(bool_lit)
+    }
+
+    fn parse_noob_lit(&mut self) -> Option<NoobLit> {
+        self.expect(TokenKind::Noob)?;
+        Some(NoobLit)
     }
 }
 

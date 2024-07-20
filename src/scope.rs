@@ -45,4 +45,8 @@ impl Scope {
     pub fn set(&mut self, name: &str, value: Object) -> bool {
         self.defs.get_mut(name).map(|obj| *obj = value).is_some()
     }
+
+    pub fn remove(&mut self, name: &str) -> bool {
+        self.defs.remove(name).is_some()
+    }
 }

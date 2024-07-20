@@ -42,6 +42,7 @@ impl Interpreter {
             ast::Expr::IntLit(ast::IntLit(value)) => Ok(Object::Numbr(value)),
             ast::Expr::FloatLit(ast::FloatLit(value)) => Ok(Object::Numbar(value)),
             ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
+            ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
         }
     }
 
@@ -72,7 +73,12 @@ impl Interpreter {
 
         let name = self.eval_ident(target)?;
         let value = self.interpret_expr(expr)?;
-        self.assign(&name, value)
+        if matches!(value, Object::Noob) {
+            // "deallocate" the object
+            self.remove(&name)
+        } else {
+            self.assign(&name, value)
+        }
     }
 
     fn eval_ident(&mut self, ident: ast::Ident) -> Result<String> {
@@ -102,6 +108,10 @@ impl Interpreter {
 
     fn assign(&mut self, name: &str, value: Object) -> Result<()> {
         self.scope.set(name, value).then_some(()).ok_or_else(|| VariableDoesNotExist(name.to_string()))
+    }
+
+    fn remove(&mut self, name: &str) -> Result<()> {
+        self.scope.remove(name).then_some(()).ok_or_else(|| VariableDoesNotExist(name.to_string()))
     }
 }
 
@@ -186,6 +196,26 @@ mod tests {
                     ],
                     None
                 ),
+                it: Object::Noob
+            },
+        )
+    }
+
+    #[test]
+    fn deallocation() {
+        let input = r#"
+        HAI 1.4
+            I HAS A x ITZ 219374
+            x R NOOB
+        KTHXBYE
+        "#;
+        let module = parse(input).unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.interpret_module(module).unwrap();
+        assert_eq!(
+            interpreter,
+            Interpreter {
+                scope: Scope::new([], None),
                 it: Object::Noob
             },
         )

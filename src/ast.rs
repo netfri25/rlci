@@ -24,6 +24,7 @@ pub enum Expr<'a> {
     IntLit(IntLit),
     FloatLit(FloatLit),
     BoolLit(BoolLit),
+    NoobLit(NoobLit),
 }
 
 // DeclareVar = Scope 'HAS A' Ident DeclareVarKind
@@ -95,6 +96,9 @@ pub struct FloatLit(pub f64);
 // BoolLit = 'WIN' | 'FAIL'
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoolLit(pub bool);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoobLit;
 
 // Sep = '\n'
 #[derive(Debug, Clone, PartialEq)]
