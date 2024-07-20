@@ -45,6 +45,7 @@ pub enum TokenKind {
     Itz,
     A,
     Srs,
+    R,
 
     // types
     Noob,   // nil
@@ -74,5 +75,10 @@ impl TokenKind {
     pub fn is_valid(&self) -> bool {
         use TokenKind::*;
         !matches!(self, Eof | Invalid)
+    }
+
+    pub fn is_ident(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, Ident | Srs)
     }
 }

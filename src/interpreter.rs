@@ -29,6 +29,7 @@ impl Interpreter {
                 Ok(())
             }
             ast::Stmt::DeclareVar(decl_var) => self.interpret_declare_var(decl_var),
+            ast::Stmt::Assign(assign) => self.interpret_assign(assign),
         }
     }
 
@@ -63,6 +64,17 @@ impl Interpreter {
         Ok(())
     }
 
+    fn interpret_assign(&mut self, assign: ast::Assign) -> Result<()> {
+        let ast::Assign {
+            target,
+            expr,
+        } = assign;
+
+        let name = self.eval_ident(target)?;
+        let value = self.interpret_expr(expr)?;
+        self.assign(&name, value)
+    }
+
     fn eval_ident(&mut self, ident: ast::Ident) -> Result<String> {
         Ok(match ident {
             ast::Ident::Literal(lit) => lit.to_string(),
@@ -86,6 +98,10 @@ impl Interpreter {
             .lookup(name)
             .cloned()
             .ok_or_else(|| VariableDoesNotExist(name.to_string()))
+    }
+
+    fn assign(&mut self, name: &str, value: Object) -> Result<()> {
+        self.scope.set(name, value).then_some(()).ok_or_else(|| VariableDoesNotExist(name.to_string()))
     }
 }
 
@@ -136,6 +152,37 @@ mod tests {
                         ("var2".into(), Object::Numbar(-12.3)),
                         ("var3".into(), Object::Troof(false)),
                         ("FAIL".into(), Object::Troof(true)),
+                    ],
+                    None
+                ),
+                it: Object::Noob
+            },
+        )
+    }
+
+    #[test]
+    fn assignment() {
+        let input = r#"
+        HAI 1.4
+            I HAS A x ITZ 3
+            I HAS A y ITZ WIN
+            I HAS A temp
+            temp R x
+            x R y
+            y R temp
+        KTHXBYE
+        "#;
+        let module = parse(input).unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.interpret_module(module).unwrap();
+        assert_eq!(
+            interpreter,
+            Interpreter {
+                scope: Scope::new(
+                    [
+                        ("x".into(), Object::Troof(true)),
+                        ("y".into(), Object::Numbr(3)),
+                        ("temp".into(), Object::Numbr(3)),
                     ],
                     None
                 ),

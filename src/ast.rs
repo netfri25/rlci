@@ -11,6 +11,7 @@ pub struct Module<'a> {
 pub enum Stmt<'a> {
     Expr(Expr<'a>),
     DeclareVar(DeclareVar<'a>),
+    Assign(Assign<'a>),
 }
 
 // Expr = Ident
@@ -42,6 +43,13 @@ pub enum DeclareVarKind<'a> {
     Empty,
     WithType(Type),
     WithExpr(Expr<'a>),
+}
+
+// Assign = Ident 'R' Expr
+#[derive(Debug, Clone, PartialEq)]
+pub struct Assign<'a> {
+    pub target: Ident<'a>,
+    pub expr: Expr<'a>,
 }
 
 // Type = 'NOOB'

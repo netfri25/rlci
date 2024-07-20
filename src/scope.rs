@@ -41,4 +41,8 @@ impl Scope {
     pub fn define(&mut self, name: String, value: Object) {
         self.defs.insert(name, value);
     }
+
+    pub fn set(&mut self, name: &str, value: Object) -> bool {
+        self.defs.get_mut(name).map(|obj| *obj = value).is_some()
+    }
 }

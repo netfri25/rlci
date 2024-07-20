@@ -106,9 +106,10 @@ impl<'a> Lexer<'a> {
             ("HAS A", HasA),
             ("HAI", Hai),
             ("ITZ", Itz),
+            ("SRS", Srs),
             ("I", I),
             ("A", A),
-            ("SRS", Srs),
+            ("R", R),
         ];
 
         KEYWORDS.iter().find_map(|(keyword, kind)| {

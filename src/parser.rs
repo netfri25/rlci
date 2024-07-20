@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, Scope, Seperator, Stmt, Type
+    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, Scope,
+    Seperator, Stmt, Type,
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -88,11 +89,21 @@ impl<'a> Parser<'a> {
 
     fn parse_stmt(&mut self) -> Option<Stmt<'a>> {
         match self.peek(0) {
+            tkn if tkn == TokenKind::Srs || tkn == TokenKind::Ident && self.peek(1) == TokenKind::R => {
+                self.parse_assign().map(Stmt::Assign)
+            }
             tkn if tkn.is_scope() && self.peek(1) == TokenKind::HasA => {
                 self.parse_declare_var().map(Stmt::DeclareVar)
             }
             _ => self.parse_expr().map(Stmt::Expr),
         }
+    }
+
+    fn parse_assign(&mut self) -> Option<Assign<'a>> {
+        let target = self.parse_ident()?;
+        self.expect(TokenKind::R)?;
+        let expr = self.parse_expr()?;
+        Some(Assign { target, expr })
     }
 
     fn parse_declare_var(&mut self) -> Option<DeclareVar<'a>> {
@@ -248,6 +259,38 @@ mod tests {
                     kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
                 }),
             ],
+        };
+
+        assert_eq!(Some(expected), got)
+    }
+
+    #[test]
+    fn assignment() {
+        let input = r#"
+        HAI 1.4
+            I HAS A x ITZ WIN
+            SRS x R 2
+            x R 3
+        KTHXBYE
+        "#;
+        let got = parse(input);
+        let expected = Module {
+            version: 1.4,
+            stmts: vec![
+                Stmt::DeclareVar(DeclareVar {
+                    scope: Scope::Current,
+                    name: Ident::Literal("x"),
+                    kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
+                }),
+                Stmt::Assign(Assign {
+                    target: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("x")))),
+                    expr: Expr::IntLit(IntLit(2)),
+                }),
+                Stmt::Assign(Assign {
+                    target: Ident::Literal("x"),
+                    expr: Expr::IntLit(IntLit(3)),
+                })
+            ]
         };
 
         assert_eq!(Some(expected), got)
