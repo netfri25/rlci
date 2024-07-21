@@ -7,6 +7,7 @@ pub struct Module<'a> {
 
 // Stmt = DeclareVar
 //      | Expr
+//      | Assign
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt<'a> {
     Expr(Expr<'a>),
@@ -18,6 +19,8 @@ pub enum Stmt<'a> {
 //      | IntLit
 //      | FloatLit
 //      | BoolLit
+//      | NoobLit
+//      | Operator
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr<'a> {
     Ident(Ident<'a>),
@@ -25,6 +28,7 @@ pub enum Expr<'a> {
     FloatLit(FloatLit),
     BoolLit(BoolLit),
     NoobLit(NoobLit),
+    Operator(Operator<'a>),
 }
 
 // DeclareVar = Scope 'HAS A' Ident DeclareVarKind
@@ -97,8 +101,29 @@ pub struct FloatLit(pub f64);
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoolLit(pub bool);
 
+// NoobLit = 'NOOB'
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoobLit;
+
+// Operator = OperatorKind 'OF' Expr AN Expr
+#[derive(Debug, Clone, PartialEq)]
+pub struct Operator<'a> {
+    pub kind: OperatorKind,
+    pub lhs: Box<Expr<'a>>,
+    pub rhs: Box<Expr<'a>>,
+}
+
+// OperatorKind = 'SUM' | 'DIFF' | 'PRODUKT' | 'QUOSHUNT' | 'MOD' | 'BIGGR' | 'SMALLR'
+#[derive(Debug, Clone, PartialEq)]
+pub enum OperatorKind {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Max,
+    Min,
+}
 
 // Sep = '\n'
 #[derive(Debug, Clone, PartialEq)]

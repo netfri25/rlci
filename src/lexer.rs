@@ -102,11 +102,20 @@ impl<'a> Lexer<'a> {
     fn lex_keyword(&self) -> Option<Token<'a>> {
         use TokenKind::*;
         const KEYWORDS: &[(&str, TokenKind)] = &[
+            ("QUOSHUNT", Quoshunt),
             ("KTHXBYE", KThxBye),
+            ("PRODUKT", Produkt),
+            ("SMALLR", Smallr),
+            ("BIGGR", Biggr),
             ("HAS A", HasA),
+            ("DIFF", Diff),
+            ("MOD", Mod),
             ("HAI", Hai),
             ("ITZ", Itz),
             ("SRS", Srs),
+            ("SUM", Sum),
+            ("AN", An),
+            ("OF", Of),
             ("I", I),
             ("A", A),
             ("R", R),
@@ -283,6 +292,26 @@ mod tests {
             vec![
                 Token::new(TokenKind::Win, "WIN"),
                 Token::new(TokenKind::Fail, "FAIL"),
+            ]
+        )
+    }
+
+    #[test]
+    fn operators() {
+        let input = "AN OF SUM DIFF PRODUKT QUOSHUNT MOD BIGGR SMALLR";
+        let tkns = lex(input);
+        assert_eq!(
+            tkns,
+            vec![
+                Token::new(TokenKind::An, "AN"),
+                Token::new(TokenKind::Of, "OF"),
+                Token::new(TokenKind::Sum, "SUM"),
+                Token::new(TokenKind::Diff, "DIFF"),
+                Token::new(TokenKind::Produkt, "PRODUKT"),
+                Token::new(TokenKind::Quoshunt, "QUOSHUNT"),
+                Token::new(TokenKind::Mod, "MOD"),
+                Token::new(TokenKind::Biggr, "BIGGR"),
+                Token::new(TokenKind::Smallr, "SMALLR"),
             ]
         )
     }

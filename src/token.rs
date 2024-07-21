@@ -46,6 +46,15 @@ pub enum TokenKind {
     A,
     Srs,
     R,
+    An,
+    Of,
+    Sum,
+    Diff,
+    Produkt,
+    Quoshunt,
+    Mod,
+    Biggr,
+    Smallr,
 
     // types
     Noob,   // nil
@@ -80,5 +89,10 @@ impl TokenKind {
     pub fn is_ident(&self) -> bool {
         use TokenKind::*;
         matches!(self, Ident | Srs)
+    }
+
+    pub fn is_operator(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, Sum | Diff | Produkt | Quoshunt | Mod | Biggr | Smallr)
     }
 }

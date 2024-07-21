@@ -1,6 +1,5 @@
 use std::fmt;
 
-
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum Object {
     #[default]
@@ -9,6 +8,36 @@ pub enum Object {
     Numbr(i64),
     Numbar(f64),
     Yarn(String),
+}
+
+impl Object {
+
+    pub fn as_float(&self) -> Option<f64> {
+        match *self {
+            Object::Troof(value) => Some(value as i64 as f64),
+            Object::Numbr(value) => Some(value as f64),
+            Object::Numbar(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn as_int(&self) -> Option<i64> {
+        match *self {
+            Object::Troof(value) => Some(value as i64),
+            Object::Numbr(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn get_type(&self) -> ObjectType {
+        match self {
+            Object::Noob => ObjectType::Noob,
+            Object::Troof(_) => ObjectType::Troof,
+            Object::Numbr(_) => ObjectType::Numbr,
+            Object::Numbar(_) => ObjectType::Numbar,
+            Object::Yarn(_) => ObjectType::Yarn,
+        }
+    }
 }
 
 impl fmt::Display for Object {
@@ -28,5 +57,28 @@ fn bool_as_troof(value: bool) -> &'static str {
         "WIN"
     } else {
         "FAIL"
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObjectType {
+    Noob,
+    Troof,
+    Numbr,
+    Numbar,
+    Yarn,
+}
+
+impl ObjectType {
+    pub fn is_int(&self) -> bool {
+        matches!(self, Self::Numbr)
+    }
+
+    pub fn is_float(&self) -> bool {
+        matches!(self, Self::Numbar)
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        self.is_int() || self.is_float()
     }
 }

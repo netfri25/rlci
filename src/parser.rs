@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit, Scope, Seperator, Stmt, Type
+    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit,
+    Operator, OperatorKind, Scope, Seperator, Stmt, Type,
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -88,7 +89,9 @@ impl<'a> Parser<'a> {
 
     fn parse_stmt(&mut self) -> Option<Stmt<'a>> {
         match self.peek(0) {
-            tkn if tkn == TokenKind::Srs || tkn == TokenKind::Ident && self.peek(1) == TokenKind::R => {
+            tkn if tkn == TokenKind::Srs
+                || tkn == TokenKind::Ident && self.peek(1) == TokenKind::R =>
+            {
                 self.parse_assign().map(Stmt::Assign)
             }
             tkn if tkn.is_scope() && self.peek(1) == TokenKind::HasA => {
@@ -176,6 +179,7 @@ impl<'a> Parser<'a> {
             TokenKind::FloatLit => self.parse_float_lit().map(Expr::FloatLit),
             TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
             TokenKind::Noob => self.parse_noob_lit().map(Expr::NoobLit),
+            tkn if tkn.is_operator() => self.parse_operator().map(Expr::Operator),
             _ => None, // TODO: report error
         }
     }
@@ -221,6 +225,31 @@ impl<'a> Parser<'a> {
     fn parse_noob_lit(&mut self) -> Option<NoobLit> {
         self.expect(TokenKind::Noob)?;
         Some(NoobLit)
+    }
+
+    fn parse_operator(&mut self) -> Option<Operator<'a>> {
+        let kind = self.parse_operator_kind()?;
+        self.expect(TokenKind::Of)?;
+        let lhs = self.parse_expr().map(Box::new)?;
+        self.expect(TokenKind::An)?;
+        let rhs = self.parse_expr().map(Box::new)?;
+        Some(Operator { kind, lhs, rhs })
+    }
+
+    fn parse_operator_kind(&mut self) -> Option<OperatorKind> {
+        let kind = match self.peek(0) {
+            TokenKind::Sum => OperatorKind::Add,
+            TokenKind::Diff => OperatorKind::Sub,
+            TokenKind::Produkt => OperatorKind::Mul,
+            TokenKind::Quoshunt => OperatorKind::Div,
+            TokenKind::Mod => OperatorKind::Mod,
+            TokenKind::Biggr => OperatorKind::Max,
+            TokenKind::Smallr => OperatorKind::Min,
+            _ => return None,
+        };
+
+        self.next_token();
+        Some(kind)
     }
 }
 
@@ -294,8 +323,56 @@ mod tests {
                 Stmt::Assign(Assign {
                     target: Ident::Literal("x"),
                     expr: Expr::IntLit(IntLit(3)),
-                })
-            ]
+                }),
+            ],
+        };
+
+        assert_eq!(Some(expected), got)
+    }
+
+    #[test]
+    fn operators() {
+        let input = r#"
+        HAI 1.4
+            I HAS A x ITZ SUM OF 1 AN DIFF OF 2 AN PRODUKT OF 3 AN QUOSHUNT OF 4 AN MOD OF 5 AN BIGGR OF 6 AN SMALLR OF 7 AN 8
+        KTHXBYE
+        "#;
+        let got = parse(input);
+        let expected = Module {
+            version: 1.4,
+            stmts: vec![Stmt::DeclareVar(DeclareVar {
+                scope: Scope::Current,
+                name: Ident::Literal("x"),
+                kind: DeclareVarKind::WithExpr(Expr::Operator(Operator {
+                    kind: OperatorKind::Add,
+                    lhs: Box::new(Expr::IntLit(IntLit(1))),
+                    rhs: Box::new(Expr::Operator(Operator {
+                        kind: OperatorKind::Sub,
+                        lhs: Box::new(Expr::IntLit(IntLit(2))),
+                        rhs: Box::new(Expr::Operator(Operator {
+                            kind: OperatorKind::Mul,
+                            lhs: Box::new(Expr::IntLit(IntLit(3))),
+                            rhs: Box::new(Expr::Operator(Operator {
+                                kind: OperatorKind::Div,
+                                lhs: Box::new(Expr::IntLit(IntLit(4))),
+                                rhs: Box::new(Expr::Operator(Operator {
+                                    kind: OperatorKind::Mod,
+                                    lhs: Box::new(Expr::IntLit(IntLit(5))),
+                                    rhs: Box::new(Expr::Operator(Operator {
+                                        kind: OperatorKind::Max,
+                                        lhs: Box::new(Expr::IntLit(IntLit(6))),
+                                        rhs: Box::new(Expr::Operator(Operator {
+                                            kind: OperatorKind::Min,
+                                            lhs: Box::new(Expr::IntLit(IntLit(7))),
+                                            rhs: Box::new(Expr::IntLit(IntLit(8))),
+                                        })),
+                                    })),
+                                })),
+                            })),
+                        })),
+                    })),
+                })),
+            })],
         };
 
         assert_eq!(Some(expected), got)

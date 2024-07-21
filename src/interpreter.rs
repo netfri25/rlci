@@ -1,5 +1,5 @@
 use crate::ast;
-use crate::object::Object;
+use crate::object::{Object, ObjectType};
 use crate::scope::Scope;
 
 #[derive(Debug, Default, PartialEq)]
@@ -43,9 +43,42 @@ impl Interpreter {
             ast::Expr::FloatLit(ast::FloatLit(value)) => Ok(Object::Numbar(value)),
             ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
             ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
+            ast::Expr::Operator(op_expr) => self.interpret_operator_expr(op_expr),
         }
     }
 
+    fn interpret_operator_expr(&mut self, op_expr: ast::Operator) -> Result<Object> {
+        let ast::Operator {
+            kind,
+            lhs,
+            rhs,
+        } = op_expr;
+
+        let lhs = self.interpret_expr(*lhs)?;
+        let rhs = self.interpret_expr(*rhs)?;
+
+        let lhs_type = lhs.get_type();
+        if !lhs_type.is_numeric() {
+            return Err(LhsNotNumeric(lhs_type))
+        }
+
+        let rhs_type = rhs.get_type();
+        if !rhs_type.is_numeric() {
+            return Err(RhsNotNumeric(rhs_type))
+        }
+
+        if lhs_type.is_float() || rhs_type.is_float() {
+            let lhs = lhs.as_float().expect("lhs is known to be float");
+            let rhs = rhs.as_float().expect("rhs is known to be float");
+            let output = float_op(kind, lhs, rhs);
+            Ok(Object::Numbar(output))
+        } else {
+            let lhs = lhs.as_int().expect("lhs is known to be int");
+            let rhs = rhs.as_int().expect("rhs is known to be int");
+            let output = int_op(kind, lhs, rhs);
+            Ok(Object::Numbr(output))
+        }
+    }
 
     fn interpret_declare_var(&mut self, decl_var: ast::DeclareVar) -> Result<()> {
         let ast::DeclareVar { scope, name, kind } = decl_var;
@@ -130,6 +163,8 @@ pub fn default_of(typ: ast::Type) -> Object {
 pub enum Error {
     NoParentScope,
     VariableDoesNotExist(String),
+    LhsNotNumeric(ObjectType),
+    RhsNotNumeric(ObjectType),
 }
 use Error::*;
 
@@ -221,9 +256,69 @@ mod tests {
         )
     }
 
+    #[test]
+    fn arith_operators() {
+        let input = r#"
+        HAI 1.4
+            I HAS A x ITZ SUM OF 1 AN 2
+            I HAS A y ITZ DIFF OF 3 AN 4
+            I HAS A z ITZ PRODUKT OF 5 AN 6
+            I HAS A w ITZ QUOSHUNT OF 12 AN x
+            I HAS A u ITZ MOD OF z AN w
+            I HAS A a ITZ BIGGR OF x AN y
+            I HAS A b ITZ SMALLR OF x AN y
+        KTHXBYE
+        "#;
+        let module = parse(input).unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.interpret_module(module).unwrap();
+        assert_eq!(
+            interpreter,
+            Interpreter {
+                scope: Scope::new(
+                    [
+                        ("x".into(), Object::Numbr(3)),
+                        ("y".into(), Object::Numbr(-1)),
+                        ("z".into(), Object::Numbr(30)),
+                        ("w".into(), Object::Numbr(4)),
+                        ("u".into(), Object::Numbr(2)),
+                        ("a".into(), Object::Numbr(3)),
+                        ("b".into(), Object::Numbr(-1)),
+                    ],
+                    None
+                ),
+                it: Object::Noob
+            },
+        )
+    }
+
     fn parse(input: &'static str) -> Option<ast::Module<'static>> {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         parser.parse_module()
+    }
+}
+
+fn float_op(kind: ast::OperatorKind, lhs: f64, rhs: f64) -> f64 {
+    match kind {
+        ast::OperatorKind::Add => lhs + rhs,
+        ast::OperatorKind::Sub => lhs - rhs,
+        ast::OperatorKind::Mul => lhs * rhs,
+        ast::OperatorKind::Div => lhs / rhs,
+        ast::OperatorKind::Mod => lhs % rhs,
+        ast::OperatorKind::Max => lhs.max(rhs),
+        ast::OperatorKind::Min => lhs.min(rhs),
+    }
+}
+
+fn int_op(kind: ast::OperatorKind, lhs: i64, rhs: i64) -> i64 {
+    match kind {
+        ast::OperatorKind::Add => lhs + rhs,
+        ast::OperatorKind::Sub => lhs - rhs,
+        ast::OperatorKind::Mul => lhs * rhs,
+        ast::OperatorKind::Div => lhs / rhs,
+        ast::OperatorKind::Mod => lhs % rhs,
+        ast::OperatorKind::Max => lhs.max(rhs),
+        ast::OperatorKind::Min => lhs.min(rhs),
     }
 }
