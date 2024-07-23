@@ -1,10 +1,10 @@
-mod lexer;
-mod token;
 mod ast;
-mod parser;
 mod interpreter;
-mod scope;
+mod lexer;
 mod object;
+mod parser;
+mod scope;
+mod token;
 
 fn main() {
     println!("Hello, world!");

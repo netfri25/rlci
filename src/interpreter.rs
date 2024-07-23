@@ -51,23 +51,19 @@ impl Interpreter {
     }
 
     fn interpret_operator_expr(&mut self, op_expr: ast::Operator) -> Result<Object> {
-        let ast::Operator {
-            kind,
-            lhs,
-            rhs,
-        } = op_expr;
+        let ast::Operator { kind, lhs, rhs } = op_expr;
 
         let lhs = self.interpret_expr(*lhs)?;
         let rhs = self.interpret_expr(*rhs)?;
 
         let lhs_type = lhs.get_type();
         if !lhs_type.is_numeric() {
-            return Err(LhsNotNumeric(lhs_type))
+            return Err(LhsNotNumeric(lhs_type));
         }
 
         let rhs_type = rhs.get_type();
         if !rhs_type.is_numeric() {
-            return Err(RhsNotNumeric(rhs_type))
+            return Err(RhsNotNumeric(rhs_type));
         }
 
         if lhs_type.is_float() || rhs_type.is_float() {
@@ -102,10 +98,7 @@ impl Interpreter {
     }
 
     fn interpret_assign(&mut self, assign: ast::Assign) -> Result<()> {
-        let ast::Assign {
-            target,
-            expr,
-        } = assign;
+        let ast::Assign { target, expr } = assign;
 
         let name = self.eval_ident(target)?;
         let value = self.interpret_expr(expr)?;
@@ -143,11 +136,17 @@ impl Interpreter {
     }
 
     fn assign(&mut self, name: &str, value: Object) -> Result<()> {
-        self.scope.set(name, value).then_some(()).ok_or_else(|| VariableDoesNotExist(name.to_string()))
+        self.scope
+            .set(name, value)
+            .then_some(())
+            .ok_or_else(|| VariableDoesNotExist(name.to_string()))
     }
 
     fn remove(&mut self, name: &str) -> Result<()> {
-        self.scope.remove(name).then_some(()).ok_or_else(|| VariableDoesNotExist(name.to_string()))
+        self.scope
+            .remove(name)
+            .then_some(())
+            .ok_or_else(|| VariableDoesNotExist(name.to_string()))
     }
 
     fn escape(&self, input: &str) -> Result<String> {
@@ -165,7 +164,7 @@ impl Interpreter {
                         // convert hex code to a character
                         let Some((mut hex_number, _)) = iter.as_str().split_once(')') else {
                             output.push(code);
-                            continue
+                            continue;
                         };
 
                         iter.nth(hex_number.len()); // also skips the closing paren
@@ -175,7 +174,7 @@ impl Interpreter {
 
                         let code = match u32::from_str_radix(hex_number, 16) {
                             Ok(code) => code,
-                            Err(err) => return Err(ParseInt(err))
+                            Err(err) => return Err(ParseInt(err)),
                         };
 
                         char::from_u32(code).ok_or(InvalidCharCode(code))?
@@ -184,13 +183,13 @@ impl Interpreter {
                         // variable string interpolation
                         let Some((name, _)) = iter.as_str().split_once('}') else {
                             output.push(code);
-                            continue
+                            continue;
                         };
 
                         iter.nth(name.len()); // also skips the closing brace
                         let value = self.lookup(name)?.to_string();
                         output.push_str(&value);
-                        continue
+                        continue;
                     }
                     '[' => {
                         todo!("unicode normative names")

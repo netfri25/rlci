@@ -11,7 +11,6 @@ pub enum Object {
 }
 
 impl Object {
-
     pub fn as_float(&self) -> Option<f64> {
         match *self {
             Object::Troof(value) => Some(value as i64 as f64),
