@@ -28,6 +28,7 @@ impl<'a> Lexer<'a> {
             Self::lex_bool_lit,
             Self::lex_float_lit,
             Self::lex_int_lit,
+            Self::lex_string_lit,
         ];
 
         // also skips whitespace
@@ -70,11 +71,11 @@ impl<'a> Lexer<'a> {
                 };
                 distance + finish.len()
             } else {
-                break
+                break;
             };
 
             self.consume(len);
-        };
+        }
 
         self.skip_whitespace();
         true
@@ -178,8 +179,40 @@ impl<'a> Lexer<'a> {
         (len > 0 && has_dot).then(|| self.new_token(len, TokenKind::FloatLit))
     }
 
+    fn lex_string_lit(&self) -> Option<Token<'a>> {
+        if self.peek() != '"' {
+            return None;
+        }
+
+        let mut escape = false;
+        let mut quots_count = 0;
+        let len = self.count_while(|&c| {
+            if escape {
+                escape = false;
+                true
+            } else {
+                escape = c == ':';
+                quots_count += (c == '"') as u8;
+                quots_count < 2
+            }
+        });
+        // include the closing quots
+        let len = len + 1;
+
+        if self.peek_at(len - 1) != Some('"') {
+            // unterminated string literal
+            Some(self.new_token(0, TokenKind::Invalid))
+        } else {
+            Some(self.new_token(len, TokenKind::StringLit))
+        }
+    }
+
     fn peek(&self) -> char {
         self.input.chars().next().unwrap_or_default()
+    }
+
+    fn peek_at(&self, at: usize) -> Option<char> {
+        self.input.chars().nth(at)
     }
 
     fn count_while(&self, pred: impl FnMut(&char) -> bool) -> usize {
@@ -255,7 +288,7 @@ mod tests {
 
     #[test]
     fn literals() {
-        let input = "WIN FAIL 209348 -2948 0.234 -1234234.3";
+        let input = r#"WIN FAIL 209348 -2948 0.234 -1234234.3 "hello :"world:"""#;
         let tkns = lex(input);
         assert_eq!(
             tkns,
@@ -266,6 +299,7 @@ mod tests {
                 Token::new(TokenKind::IntLit, "-2948"),
                 Token::new(TokenKind::FloatLit, "0.234"),
                 Token::new(TokenKind::FloatLit, "-1234234.3"),
+                Token::new(TokenKind::StringLit, "\"hello :\"world:\"\""),
             ]
         )
     }

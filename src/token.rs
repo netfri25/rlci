@@ -34,6 +34,7 @@ pub enum TokenKind {
     Ident,
     IntLit,
     FloatLit,
+    StringLit,
     Win,  // boolean true
     Fail, // boolean false
 

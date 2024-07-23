@@ -41,6 +41,7 @@ impl Interpreter {
             }
             ast::Expr::IntLit(ast::IntLit(value)) => Ok(Object::Numbr(value)),
             ast::Expr::FloatLit(ast::FloatLit(value)) => Ok(Object::Numbar(value)),
+            ast::Expr::StringLit(ast::StringLit(value)) => Ok(Object::Yarn(value)),
             ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
             ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
             ast::Expr::Operator(op_expr) => self.interpret_operator_expr(op_expr),
@@ -154,7 +155,7 @@ pub fn default_of(typ: ast::Type) -> Object {
         ast::Type::Troof => Object::Troof(false),
         ast::Type::Numbr => Object::Numbr(0),
         ast::Type::Numbar => Object::Numbar(0.),
-        ast::Type::Yarn => Object::Yarn(String::new()),
+        ast::Type::Yarn => Object::Yarn(String::default()),
         ast::Type::Bukkit => todo!("bukkit object"),
     }
 }
@@ -180,9 +181,10 @@ mod tests {
         let input = r#"
         HAI 1.4
             I HAS A var
+            I HAS A name ITZ "epic name:)"
             I HAS A var2 ITZ -12.3
             I HAS A var3 ITZ A TROOF
-            I HAS A SRS var3 ITZ WIN
+            I HAS A SRS name ITZ WIN
         KTHXBYE
         "#;
         let module = parse(input).unwrap();
@@ -193,10 +195,11 @@ mod tests {
             Interpreter {
                 scope: Scope::new(
                     [
+                        ("name".into(), Object::Yarn("epic name\n".into())),
                         ("var".into(), Object::Noob),
                         ("var2".into(), Object::Numbar(-12.3)),
                         ("var3".into(), Object::Troof(false)),
-                        ("FAIL".into(), Object::Troof(true)),
+                        ("epic name\n".into(), Object::Troof(true)),
                     ],
                     None
                 ),

@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit,
-    Operator, OperatorKind, Scope, Seperator, Stmt, Type,
+    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit, Operator, OperatorKind, Scope, Seperator, Stmt, StringLit, Type
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -177,6 +176,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident => self.parse_ident().map(Expr::Ident),
             TokenKind::IntLit => self.parse_int_lit().map(Expr::IntLit),
             TokenKind::FloatLit => self.parse_float_lit().map(Expr::FloatLit),
+            TokenKind::StringLit => self.parse_string_lit().map(Expr::StringLit),
             TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
             TokenKind::Noob => self.parse_noob_lit().map(Expr::NoobLit),
             tkn if tkn.is_operator() => self.parse_operator().map(Expr::Operator),
@@ -227,6 +227,14 @@ impl<'a> Parser<'a> {
         Some(NoobLit)
     }
 
+    fn parse_string_lit(&mut self) -> Option<StringLit> {
+        let tkn = self.expect(TokenKind::StringLit)?;
+        let len = tkn.text().len() - 1; // remove quots from the start and the end
+        let text = &tkn.text()[1..len];
+        let escaped = escape_string(text);
+        Some(StringLit(escaped))
+    }
+
     fn parse_operator(&mut self) -> Option<Operator<'a>> {
         let kind = self.parse_operator_kind()?;
         self.expect(TokenKind::Of)?;
@@ -253,6 +261,27 @@ impl<'a> Parser<'a> {
     }
 }
 
+pub fn escape_string(input: &str) -> String {
+    let mut output = String::new();
+
+    let mut iter = input.chars();
+    while let Some(mut c) = iter.next() {
+        if c == ':' {
+            let code = iter.next().unwrap_or_default();
+            c = match code {
+                ')' => '\n',
+                '>' => '\t',
+                'o' => 0x07 as char, // bell ansi code
+                other => other,
+            };
+        };
+
+        output.push(c);
+    }
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +295,7 @@ mod tests {
             var HAS A var ITZ -12.3
             I HAS A var ITZ A TROOF
             I HAS A SRS var ITZ WIN
+            I HAS A SRS var ITZ "hello:)world:>:o::"
         KTHXBYE
         "#;
         let got = parse(input);
@@ -291,6 +321,11 @@ mod tests {
                     scope: Scope::Current,
                     name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
                     kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
+                }),
+                Stmt::DeclareVar(DeclareVar {
+                    scope: Scope::Current,
+                    name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
+                    kind: DeclareVarKind::WithExpr(Expr::StringLit(StringLit("hello\nworld\t\u{7}:".into()))),
                 }),
             ],
         };

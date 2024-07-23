@@ -26,6 +26,7 @@ pub enum Expr<'a> {
     Ident(Ident<'a>),
     IntLit(IntLit),
     FloatLit(FloatLit),
+    StringLit(StringLit),
     BoolLit(BoolLit),
     NoobLit(NoobLit),
     Operator(Operator<'a>),
@@ -104,6 +105,11 @@ pub struct BoolLit(pub bool);
 // NoobLit = 'NOOB'
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoobLit;
+
+// contains the string after escaping, hence the `Box<str>` instead of `&'a str`
+// StringLit = '"' ... (some complex regex) ... '"'
+#[derive(Debug, Clone, PartialEq)]
+pub struct StringLit(pub String);
 
 // Operator = OperatorKind 'OF' Expr AN Expr
 #[derive(Debug, Clone, PartialEq)]
