@@ -1,3 +1,5 @@
+use std::num::ParseIntError;
+
 use crate::ast;
 use crate::object::{Object, ObjectType};
 use crate::scope::Scope;
@@ -41,7 +43,7 @@ impl Interpreter {
             }
             ast::Expr::IntLit(ast::IntLit(value)) => Ok(Object::Numbr(value)),
             ast::Expr::FloatLit(ast::FloatLit(value)) => Ok(Object::Numbar(value)),
-            ast::Expr::StringLit(ast::StringLit(value)) => Ok(Object::Yarn(value)),
+            ast::Expr::StringLit(ast::StringLit(value)) => Ok(Object::Yarn(self.escape(value)?)),
             ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
             ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
             ast::Expr::Operator(op_expr) => self.interpret_operator_expr(op_expr),
@@ -147,6 +149,61 @@ impl Interpreter {
     fn remove(&mut self, name: &str) -> Result<()> {
         self.scope.remove(name).then_some(()).ok_or_else(|| VariableDoesNotExist(name.to_string()))
     }
+
+    fn escape(&self, input: &str) -> Result<String> {
+        let mut output = String::new();
+
+        let mut iter = input.chars();
+        while let Some(mut c) = iter.next() {
+            if c == ':' {
+                let code = iter.next().unwrap_or_default();
+                c = match code {
+                    ')' => '\n',
+                    '>' => '\t',
+                    'o' => 0x07 as char, // bell ansi code
+                    '(' => {
+                        // convert hex code to a character
+                        let Some((mut hex_number, _)) = iter.as_str().split_once(')') else {
+                            output.push(code);
+                            continue
+                        };
+
+                        iter.nth(hex_number.len()); // also skips the closing paren
+                        if hex_number.starts_with("0x") {
+                            hex_number = &hex_number[2..];
+                        }
+
+                        let code = match u32::from_str_radix(hex_number, 16) {
+                            Ok(code) => code,
+                            Err(err) => return Err(ParseInt(err))
+                        };
+
+                        char::from_u32(code).ok_or(InvalidCharCode(code))?
+                    }
+                    '{' => {
+                        // variable string interpolation
+                        let Some((name, _)) = iter.as_str().split_once('}') else {
+                            output.push(code);
+                            continue
+                        };
+
+                        iter.nth(name.len()); // also skips the closing brace
+                        let value = self.lookup(name)?.to_string();
+                        output.push_str(&value);
+                        continue
+                    }
+                    '[' => {
+                        todo!("unicode normative names")
+                    }
+                    other => other,
+                };
+            };
+
+            output.push(c);
+        }
+
+        Ok(output)
+    }
 }
 
 fn default_of(typ: ast::Type) -> Object {
@@ -190,6 +247,8 @@ pub enum Error {
     VariableDoesNotExist(String),
     LhsNotNumeric(ObjectType),
     RhsNotNumeric(ObjectType),
+    ParseInt(ParseIntError),
+    InvalidCharCode(u32),
 }
 use Error::*;
 
@@ -209,6 +268,7 @@ mod tests {
             I HAS A var2 ITZ -12.3
             I HAS A var3 ITZ A TROOF
             I HAS A SRS name ITZ WIN
+            I HAS A var8 ITZ ":{var3}"
         KTHXBYE
         "#;
         let module = parse(input).unwrap();
@@ -223,6 +283,7 @@ mod tests {
                         ("var".into(), Object::Noob),
                         ("var2".into(), Object::Numbar(-12.3)),
                         ("var3".into(), Object::Troof(false)),
+                        ("var8".into(), Object::Yarn("FAIL".into())),
                         ("epic name\n".into(), Object::Troof(true)),
                     ],
                     None

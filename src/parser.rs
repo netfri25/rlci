@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit, Operator, OperatorKind, Scope, Seperator, Stmt, StringLit, Type
+    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit,
+    Operator, OperatorKind, Scope, Seperator, Stmt, StringLit, Type,
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -227,12 +228,11 @@ impl<'a> Parser<'a> {
         Some(NoobLit)
     }
 
-    fn parse_string_lit(&mut self) -> Option<StringLit> {
+    fn parse_string_lit(&mut self) -> Option<StringLit<'a>> {
         let tkn = self.expect(TokenKind::StringLit)?;
-        let len = tkn.text().len() - 1; // remove quots from the start and the end
+        let len = tkn.text().len() - 1;
         let text = &tkn.text()[1..len];
-        let escaped = escape_string(text);
-        Some(StringLit(escaped))
+        Some(StringLit(text))
     }
 
     fn parse_operator(&mut self) -> Option<Operator<'a>> {
@@ -325,7 +325,9 @@ mod tests {
                 Stmt::DeclareVar(DeclareVar {
                     scope: Scope::Current,
                     name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
-                    kind: DeclareVarKind::WithExpr(Expr::StringLit(StringLit("hello\nworld\t\u{7}:".into()))),
+                    kind: DeclareVarKind::WithExpr(Expr::StringLit(StringLit(
+                        "hello:)world:>:o::",
+                    ))),
                 }),
             ],
         };
