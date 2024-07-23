@@ -149,7 +149,7 @@ impl Interpreter {
     }
 }
 
-pub fn default_of(typ: ast::Type) -> Object {
+fn default_of(typ: ast::Type) -> Object {
     match typ {
         ast::Type::Noob => Object::Noob,
         ast::Type::Troof => Object::Troof(false),
@@ -157,6 +157,30 @@ pub fn default_of(typ: ast::Type) -> Object {
         ast::Type::Numbar => Object::Numbar(0.),
         ast::Type::Yarn => Object::Yarn(String::default()),
         ast::Type::Bukkit => todo!("bukkit object"),
+    }
+}
+
+fn float_op(kind: ast::OperatorKind, lhs: f64, rhs: f64) -> f64 {
+    match kind {
+        ast::OperatorKind::Add => lhs + rhs,
+        ast::OperatorKind::Sub => lhs - rhs,
+        ast::OperatorKind::Mul => lhs * rhs,
+        ast::OperatorKind::Div => lhs / rhs,
+        ast::OperatorKind::Mod => lhs % rhs,
+        ast::OperatorKind::Max => lhs.max(rhs),
+        ast::OperatorKind::Min => lhs.min(rhs),
+    }
+}
+
+fn int_op(kind: ast::OperatorKind, lhs: i64, rhs: i64) -> i64 {
+    match kind {
+        ast::OperatorKind::Add => lhs + rhs,
+        ast::OperatorKind::Sub => lhs - rhs,
+        ast::OperatorKind::Mul => lhs * rhs,
+        ast::OperatorKind::Div => lhs / rhs,
+        ast::OperatorKind::Mod => lhs % rhs,
+        ast::OperatorKind::Max => lhs.max(rhs),
+        ast::OperatorKind::Min => lhs.min(rhs),
     }
 }
 
@@ -299,29 +323,5 @@ mod tests {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         parser.parse_module()
-    }
-}
-
-fn float_op(kind: ast::OperatorKind, lhs: f64, rhs: f64) -> f64 {
-    match kind {
-        ast::OperatorKind::Add => lhs + rhs,
-        ast::OperatorKind::Sub => lhs - rhs,
-        ast::OperatorKind::Mul => lhs * rhs,
-        ast::OperatorKind::Div => lhs / rhs,
-        ast::OperatorKind::Mod => lhs % rhs,
-        ast::OperatorKind::Max => lhs.max(rhs),
-        ast::OperatorKind::Min => lhs.min(rhs),
-    }
-}
-
-fn int_op(kind: ast::OperatorKind, lhs: i64, rhs: i64) -> i64 {
-    match kind {
-        ast::OperatorKind::Add => lhs + rhs,
-        ast::OperatorKind::Sub => lhs - rhs,
-        ast::OperatorKind::Mul => lhs * rhs,
-        ast::OperatorKind::Div => lhs / rhs,
-        ast::OperatorKind::Mod => lhs % rhs,
-        ast::OperatorKind::Max => lhs.max(rhs),
-        ast::OperatorKind::Min => lhs.min(rhs),
     }
 }
