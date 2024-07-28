@@ -28,6 +28,16 @@ impl Object {
         }
     }
 
+    pub fn as_bool(&self) -> bool {
+        match *self {
+            Object::Troof(value) => value,
+            Object::Noob => false,
+            Object::Numbr(value) => value != 0,
+            Object::Numbar(value) => value != 0.,
+            Object::Yarn(ref value) => !value.is_empty(),
+        }
+    }
+
     pub fn get_type(&self) -> ObjectType {
         match self {
             Object::Noob => ObjectType::Noob,

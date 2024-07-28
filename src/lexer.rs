@@ -107,14 +107,20 @@ impl<'a> Lexer<'a> {
             ("KTHXBYE", KThxBye),
             ("PRODUKT", Produkt),
             ("SMALLR", Smallr),
+            ("EITHER", Either),
             ("BIGGR", Biggr),
             ("HAS A", HasA),
             ("DIFF", Diff),
+            ("BOTH", Both),
             ("MOD", Mod),
             ("HAI", Hai),
             ("ITZ", Itz),
             ("SRS", Srs),
             ("SUM", Sum),
+            ("NOT", Not),
+            ("ALL", All),
+            ("ANY", Any),
+            ("WON", Won),
             ("AN", An),
             ("OF", Of),
             ("I", I),
@@ -253,7 +259,7 @@ mod tests {
 
     #[test]
     pub fn keywords() {
-        let input = "HAI I HAS A KTHXBYE ITZ A SRS";
+        let input = "HAI I HAS A KTHXBYE ITZ A SRS EITHER BOTH NOT WON ANY ALL";
         let tkns = lex(input);
         assert_eq!(
             tkns,
@@ -265,6 +271,12 @@ mod tests {
                 Token::new(Itz, "ITZ"),
                 Token::new(A, "A"),
                 Token::new(Srs, "SRS"),
+                Token::new(Either, "EITHER"),
+                Token::new(Both, "BOTH"),
+                Token::new(Not, "NOT"),
+                Token::new(Won, "WON"),
+                Token::new(Any, "ANY"),
+                Token::new(All, "ALL"),
             ]
         )
     }

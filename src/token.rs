@@ -49,6 +49,8 @@ pub enum TokenKind {
     R,
     An,
     Of,
+
+    // arithmetics
     Sum,
     Diff,
     Produkt,
@@ -56,6 +58,14 @@ pub enum TokenKind {
     Mod,
     Biggr,
     Smallr,
+
+    // boolean operations
+    Both,
+    Either,
+    Won,
+    Not,
+    All,
+    Any,
 
     // types
     Noob,   // nil
@@ -92,8 +102,8 @@ impl TokenKind {
         matches!(self, Ident | Srs)
     }
 
-    pub fn is_operator(&self) -> bool {
+    pub fn is_bin_op(&self) -> bool {
         use TokenKind::*;
-        matches!(self, Sum | Diff | Produkt | Quoshunt | Mod | Biggr | Smallr)
+        matches!(self, Sum | Diff | Produkt | Quoshunt | Mod | Biggr | Smallr | Both | Either | Won)
     }
 }

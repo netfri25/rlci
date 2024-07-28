@@ -46,14 +46,41 @@ impl Interpreter {
             ast::Expr::StringLit(ast::StringLit(value)) => Ok(Object::Yarn(self.escape(value)?)),
             ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
             ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
-            ast::Expr::Operator(op_expr) => self.interpret_operator_expr(op_expr),
+            ast::Expr::BinOp(op_expr) => self.interpret_bin_op_expr(op_expr),
         }
     }
 
-    fn interpret_operator_expr(&mut self, op_expr: ast::Operator) -> Result<Object> {
-        let ast::Operator { kind, lhs, rhs } = op_expr;
+    fn interpret_bin_op_expr(&mut self, op_expr: ast::BinOp) -> Result<Object> {
+        let ast::BinOp { kind, lhs, rhs } = op_expr;
 
         let lhs = self.interpret_expr(*lhs)?;
+
+        // boolean expressions
+        match kind {
+            ast::BinOpKind::And => {
+                return if lhs.as_bool() {
+                    let value = self.interpret_expr(*rhs)?.as_bool();
+                    Ok(Object::Troof(value))
+                } else {
+                    Ok(Object::Troof(false))
+                }
+            },
+            ast::BinOpKind::Or => {
+                return if lhs.as_bool() {
+                    Ok(Object::Troof(true))
+                } else {
+                    let value = self.interpret_expr(*rhs)?.as_bool();
+                    Ok(Object::Troof(value))
+                }
+            },
+            ast::BinOpKind::Xor => {
+                let rhs = self.interpret_expr(*rhs)?;
+                return Ok(Object::Troof(lhs.as_bool() != rhs.as_bool()))
+            }
+            _ => {}
+        }
+
+        // integer expressions
         let rhs = self.interpret_expr(*rhs)?;
 
         let lhs_type = lhs.get_type();
@@ -69,12 +96,12 @@ impl Interpreter {
         if lhs_type.is_float() || rhs_type.is_float() {
             let lhs = lhs.as_float().expect("lhs is known to be float");
             let rhs = rhs.as_float().expect("rhs is known to be float");
-            let output = float_op(kind, lhs, rhs);
+            let output = float_op(kind, lhs, rhs)?;
             Ok(Object::Numbar(output))
         } else {
             let lhs = lhs.as_int().expect("lhs is known to be int");
             let rhs = rhs.as_int().expect("rhs is known to be int");
-            let output = int_op(kind, lhs, rhs);
+            let output = int_op(kind, lhs, rhs)?;
             Ok(Object::Numbr(output))
         }
     }
@@ -216,28 +243,30 @@ fn default_of(typ: ast::Type) -> Object {
     }
 }
 
-fn float_op(kind: ast::OperatorKind, lhs: f64, rhs: f64) -> f64 {
-    match kind {
-        ast::OperatorKind::Add => lhs + rhs,
-        ast::OperatorKind::Sub => lhs - rhs,
-        ast::OperatorKind::Mul => lhs * rhs,
-        ast::OperatorKind::Div => lhs / rhs,
-        ast::OperatorKind::Mod => lhs % rhs,
-        ast::OperatorKind::Max => lhs.max(rhs),
-        ast::OperatorKind::Min => lhs.min(rhs),
-    }
+fn float_op(kind: ast::BinOpKind, lhs: f64, rhs: f64) -> Result<f64> {
+    Ok(match kind {
+        ast::BinOpKind::Add => lhs + rhs,
+        ast::BinOpKind::Sub => lhs - rhs,
+        ast::BinOpKind::Mul => lhs * rhs,
+        ast::BinOpKind::Div => lhs / rhs,
+        ast::BinOpKind::Mod => lhs % rhs,
+        ast::BinOpKind::Max => lhs.max(rhs),
+        ast::BinOpKind::Min => lhs.min(rhs),
+        _ => return Err(InvalidNumericBinOp(kind))
+    })
 }
 
-fn int_op(kind: ast::OperatorKind, lhs: i64, rhs: i64) -> i64 {
-    match kind {
-        ast::OperatorKind::Add => lhs + rhs,
-        ast::OperatorKind::Sub => lhs - rhs,
-        ast::OperatorKind::Mul => lhs * rhs,
-        ast::OperatorKind::Div => lhs / rhs,
-        ast::OperatorKind::Mod => lhs % rhs,
-        ast::OperatorKind::Max => lhs.max(rhs),
-        ast::OperatorKind::Min => lhs.min(rhs),
-    }
+fn int_op(kind: ast::BinOpKind, lhs: i64, rhs: i64) -> Result<i64> {
+    Ok(match kind {
+        ast::BinOpKind::Add => lhs + rhs,
+        ast::BinOpKind::Sub => lhs - rhs,
+        ast::BinOpKind::Mul => lhs * rhs,
+        ast::BinOpKind::Div => lhs / rhs,
+        ast::BinOpKind::Mod => lhs % rhs,
+        ast::BinOpKind::Max => lhs.max(rhs),
+        ast::BinOpKind::Min => lhs.min(rhs),
+        _ => return Err(InvalidNumericBinOp(kind))
+    })
 }
 
 #[derive(Debug)]
@@ -248,6 +277,7 @@ pub enum Error {
     RhsNotNumeric(ObjectType),
     ParseInt(ParseIntError),
     InvalidCharCode(u32),
+    InvalidNumericBinOp(ast::BinOpKind),
 }
 use Error::*;
 
@@ -371,6 +401,35 @@ mod tests {
                         ("u".into(), Object::Numbr(2)),
                         ("a".into(), Object::Numbr(3)),
                         ("b".into(), Object::Numbr(-1)),
+                    ],
+                    None
+                ),
+                it: Object::Noob
+            },
+        )
+    }
+
+    #[test]
+    fn boolean_operators() {
+        // TODO: add a test for short-circuiting after implementing function calls
+        let input = r#"
+        HAI 1.4
+            I HAS A a ITZ BOTH OF "" AN 2465
+            I HAS A b ITZ EITHER OF 0. AN WIN
+            I HAS A c ITZ WON OF 0. AN NOOB
+        KTHXBYE
+        "#;
+        let module = parse(input).unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.interpret_module(module).unwrap();
+        assert_eq!(
+            interpreter,
+            Interpreter {
+                scope: Scope::new(
+                    [
+                        ("a".into(), Object::Troof(false)),
+                        ("b".into(), Object::Troof(true)),
+                        ("c".into(), Object::Troof(false)),
                     ],
                     None
                 ),

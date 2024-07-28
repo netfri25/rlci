@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::ast::{
     Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit,
-    Operator, OperatorKind, Scope, Seperator, Stmt, StringLit, Type,
+    BinOp, BinOpKind, Scope, Seperator, Stmt, StringLit, Type,
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -180,7 +180,7 @@ impl<'a> Parser<'a> {
             TokenKind::StringLit => self.parse_string_lit().map(Expr::StringLit),
             TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
             TokenKind::Noob => self.parse_noob_lit().map(Expr::NoobLit),
-            tkn if tkn.is_operator() => self.parse_operator().map(Expr::Operator),
+            tkn if tkn.is_bin_op() => self.parse_bin_op().map(Expr::BinOp),
             _ => None, // TODO: report error
         }
     }
@@ -235,27 +235,31 @@ impl<'a> Parser<'a> {
         Some(StringLit(text))
     }
 
-    fn parse_operator(&mut self) -> Option<Operator<'a>> {
-        let kind = self.parse_operator_kind()?;
-        self.expect(TokenKind::Of)?;
+    fn parse_bin_op(&mut self) -> Option<BinOp<'a>> {
+        let kind = self.parse_bin_op_kind()?;
         let lhs = self.parse_expr().map(Box::new)?;
         self.expect(TokenKind::An)?;
         let rhs = self.parse_expr().map(Box::new)?;
-        Some(Operator { kind, lhs, rhs })
+        Some(BinOp { kind, lhs, rhs })
     }
 
-    fn parse_operator_kind(&mut self) -> Option<OperatorKind> {
-        let kind = match self.peek(0) {
-            TokenKind::Sum => OperatorKind::Add,
-            TokenKind::Diff => OperatorKind::Sub,
-            TokenKind::Produkt => OperatorKind::Mul,
-            TokenKind::Quoshunt => OperatorKind::Div,
-            TokenKind::Mod => OperatorKind::Mod,
-            TokenKind::Biggr => OperatorKind::Max,
-            TokenKind::Smallr => OperatorKind::Min,
+    fn parse_bin_op_kind(&mut self) -> Option<BinOpKind> {
+        use TokenKind::*;
+        let kind = match (self.peek(1), self.peek(0)) {
+            (Of, Sum) => BinOpKind::Add,
+            (Of, Diff) => BinOpKind::Sub,
+            (Of, Produkt) => BinOpKind::Mul,
+            (Of, Quoshunt) => BinOpKind::Div,
+            (Of, Mod) => BinOpKind::Mod,
+            (Of, Biggr) => BinOpKind::Max,
+            (Of, Smallr) => BinOpKind::Min,
+            (Of, Both) => BinOpKind::And,
+            (Of, Either) => BinOpKind::Or,
+            (Of, Won) => BinOpKind::Xor,
             _ => return None,
         };
 
+        self.next_token();
         self.next_token();
         Some(kind)
     }
@@ -380,26 +384,26 @@ mod tests {
             stmts: vec![Stmt::DeclareVar(DeclareVar {
                 scope: Scope::Current,
                 name: Ident::Literal("x"),
-                kind: DeclareVarKind::WithExpr(Expr::Operator(Operator {
-                    kind: OperatorKind::Add,
+                kind: DeclareVarKind::WithExpr(Expr::BinOp(BinOp {
+                    kind: BinOpKind::Add,
                     lhs: Box::new(Expr::IntLit(IntLit(1))),
-                    rhs: Box::new(Expr::Operator(Operator {
-                        kind: OperatorKind::Sub,
+                    rhs: Box::new(Expr::BinOp(BinOp {
+                        kind: BinOpKind::Sub,
                         lhs: Box::new(Expr::IntLit(IntLit(2))),
-                        rhs: Box::new(Expr::Operator(Operator {
-                            kind: OperatorKind::Mul,
+                        rhs: Box::new(Expr::BinOp(BinOp {
+                            kind: BinOpKind::Mul,
                             lhs: Box::new(Expr::IntLit(IntLit(3))),
-                            rhs: Box::new(Expr::Operator(Operator {
-                                kind: OperatorKind::Div,
+                            rhs: Box::new(Expr::BinOp(BinOp {
+                                kind: BinOpKind::Div,
                                 lhs: Box::new(Expr::IntLit(IntLit(4))),
-                                rhs: Box::new(Expr::Operator(Operator {
-                                    kind: OperatorKind::Mod,
+                                rhs: Box::new(Expr::BinOp(BinOp {
+                                    kind: BinOpKind::Mod,
                                     lhs: Box::new(Expr::IntLit(IntLit(5))),
-                                    rhs: Box::new(Expr::Operator(Operator {
-                                        kind: OperatorKind::Max,
+                                    rhs: Box::new(Expr::BinOp(BinOp {
+                                        kind: BinOpKind::Max,
                                         lhs: Box::new(Expr::IntLit(IntLit(6))),
-                                        rhs: Box::new(Expr::Operator(Operator {
-                                            kind: OperatorKind::Min,
+                                        rhs: Box::new(Expr::BinOp(BinOp {
+                                            kind: BinOpKind::Min,
                                             lhs: Box::new(Expr::IntLit(IntLit(7))),
                                             rhs: Box::new(Expr::IntLit(IntLit(8))),
                                         })),

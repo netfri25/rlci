@@ -18,9 +18,10 @@ pub enum Stmt<'a> {
 // Expr = Ident
 //      | IntLit
 //      | FloatLit
+//      | StringLit
 //      | BoolLit
 //      | NoobLit
-//      | Operator
+//      | BinOp
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr<'a> {
     Ident(Ident<'a>),
@@ -29,7 +30,7 @@ pub enum Expr<'a> {
     StringLit(StringLit<'a>),
     BoolLit(BoolLit),
     NoobLit(NoobLit),
-    Operator(Operator<'a>),
+    BinOp(BinOp<'a>),
 }
 
 // DeclareVar = Scope 'HAS A' Ident DeclareVarKind
@@ -111,17 +112,17 @@ pub struct NoobLit;
 #[derive(Debug, Clone, PartialEq)]
 pub struct StringLit<'a>(pub &'a str);
 
-// Operator = OperatorKind 'OF' Expr AN Expr
+// BinOp = BinOpKind 'OF' Expr AN Expr
 #[derive(Debug, Clone, PartialEq)]
-pub struct Operator<'a> {
-    pub kind: OperatorKind,
+pub struct BinOp<'a> {
+    pub kind: BinOpKind,
     pub lhs: Box<Expr<'a>>,
     pub rhs: Box<Expr<'a>>,
 }
 
-// OperatorKind = 'SUM' | 'DIFF' | 'PRODUKT' | 'QUOSHUNT' | 'MOD' | 'BIGGR' | 'SMALLR'
+// BinOpKind = 'SUM' | 'DIFF' | 'PRODUKT' | 'QUOSHUNT' | 'MOD' | 'BIGGR' | 'SMALLR'
 #[derive(Debug, Clone, PartialEq)]
-pub enum OperatorKind {
+pub enum BinOpKind {
     Add,
     Sub,
     Mul,
@@ -129,6 +130,9 @@ pub enum OperatorKind {
     Mod,
     Max,
     Min,
+    And,
+    Or,
+    Xor,
 }
 
 // Sep = '\n'
