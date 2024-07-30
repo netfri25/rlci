@@ -47,12 +47,12 @@ impl Interpreter {
             ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
             ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
             ast::Expr::BinOp(op_expr) => self.interpret_bin_op_expr(op_expr),
+            ast::Expr::UnaryOp(op_expr) => self.interpret_unary_op_expr(op_expr),
+            ast::Expr::InfiniteOp(op_expr) => self.interpret_infinite_op_expr(op_expr),,
         }
     }
 
-    fn interpret_bin_op_expr(&mut self, op_expr: ast::BinOp) -> Result<Object> {
-        let ast::BinOp { kind, lhs, rhs } = op_expr;
-
+    fn interpret_bin_op_expr(&mut self, ast::BinOp { kind, lhs, rhs }: ast::BinOp) -> Result<Object> {
         let lhs = self.interpret_expr(*lhs)?;
 
         // boolean expressions
@@ -104,6 +104,29 @@ impl Interpreter {
             let output = int_op(kind, lhs, rhs)?;
             Ok(Object::Numbr(output))
         }
+    }
+
+    fn interpret_unary_op_expr(&mut self, ast::UnaryOp { kind, rhs }: ast::UnaryOp) -> Result<Object> {
+        let rhs = self.interpret_expr(*rhs)?;
+        match kind {
+            ast::UnaryOpKind::Not => Ok(Object::Troof(!rhs.as_bool())),
+        }
+    }
+
+    fn interpret_infinite_op_expr(&mut self, ast::InfiniteOp { kind, args }: ast::InfiniteOp) -> Result<Object> {
+        let break_when = match &kind {
+            ast::InfiniteOpKind::All => false,
+            ast::InfiniteOpKind::Any => true,
+        };
+
+        for arg in args {
+            let value = self.interpret_expr(arg)?.as_bool();
+            if value == break_when {
+                return Ok(Object::Troof(break_when))
+            }
+        }
+
+        Ok(Object::Troof(!break_when))
     }
 
     fn interpret_declare_var(&mut self, decl_var: ast::DeclareVar) -> Result<()> {
@@ -415,7 +438,7 @@ mod tests {
         let input = r#"
         HAI 1.4
             I HAS A a ITZ BOTH OF "" AN 2465
-            I HAS A b ITZ EITHER OF 0. AN WIN
+            I HAS A b ITZ EITHER OF 0. AN NOT NOOB
             I HAS A c ITZ WON OF 0. AN NOOB
         KTHXBYE
         "#;

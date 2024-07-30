@@ -49,6 +49,7 @@ pub enum TokenKind {
     R,
     An,
     Of,
+    Mkay,
 
     // arithmetics
     Sum,
@@ -105,5 +106,15 @@ impl TokenKind {
     pub fn is_bin_op(&self) -> bool {
         use TokenKind::*;
         matches!(self, Sum | Diff | Produkt | Quoshunt | Mod | Biggr | Smallr | Both | Either | Won)
+    }
+
+    pub fn is_unary_op(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, Not)
+    }
+
+    pub fn is_infinite_op(&self) -> bool {
+        use TokenKind::*;
+        matches!(self, All | Any)
     }
 }

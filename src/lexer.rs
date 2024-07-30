@@ -112,6 +112,7 @@ impl<'a> Lexer<'a> {
             ("HAS A", HasA),
             ("DIFF", Diff),
             ("BOTH", Both),
+            ("MKAY", Mkay),
             ("MOD", Mod),
             ("HAI", Hai),
             ("ITZ", Itz),

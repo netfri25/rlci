@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    Assign, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, IntLit, Module, NoobLit,
-    BinOp, BinOpKind, Scope, Seperator, Stmt, StringLit, Type,
+    Assign, BinOp, BinOpKind, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, InfiniteOp, InfiniteOpKind, IntLit, Module, NoobLit, Scope, Seperator, Stmt, StringLit, Type, UnaryOp, UnaryOpKind
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -181,6 +180,8 @@ impl<'a> Parser<'a> {
             TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
             TokenKind::Noob => self.parse_noob_lit().map(Expr::NoobLit),
             tkn if tkn.is_bin_op() => self.parse_bin_op().map(Expr::BinOp),
+            tkn if tkn.is_unary_op() => self.parse_unary_op().map(Expr::UnaryOp),
+            tkn if tkn.is_infinite_op() => self.parse_infinite_op().map(Expr::InfiniteOp),
             _ => None, // TODO: report error
         }
     }
@@ -260,6 +261,44 @@ impl<'a> Parser<'a> {
         };
 
         self.next_token();
+        self.next_token();
+        Some(kind)
+    }
+
+    fn parse_unary_op(&mut self) -> Option<UnaryOp<'a>> {
+        let kind = self.parse_unary_op_kind()?;
+        let rhs = self.parse_expr().map(Box::new)?;
+        Some(UnaryOp { kind, rhs })
+    }
+
+    fn parse_unary_op_kind(&mut self) -> Option<UnaryOpKind> {
+        self.expect(TokenKind::Not)?;
+        Some(UnaryOpKind::Not)
+    }
+
+    fn parse_infinite_op(&mut self) -> Option<InfiniteOp<'a>> {
+        let kind = self.parse_infinite_op_kind()?;
+        let mut args = Vec::new();
+
+        while self.peek(0) != TokenKind::Mkay {
+            let expr = self.parse_expr()?;
+            args.push(expr);
+
+            if self.peek(0) == TokenKind::An {
+                self.next_token();
+            }
+        }
+
+        Some(InfiniteOp { kind, args })
+    }
+
+    fn parse_infinite_op_kind(&mut self) -> Option<InfiniteOpKind> {
+        let kind = match self.peek(0) {
+            TokenKind::All => InfiniteOpKind::All,
+            TokenKind::Any => InfiniteOpKind::Any,
+            _ => return None,
+        };
+
         self.next_token();
         Some(kind)
     }

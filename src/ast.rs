@@ -22,6 +22,7 @@ pub enum Stmt<'a> {
 //      | BoolLit
 //      | NoobLit
 //      | BinOp
+//      | UnaryOp
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr<'a> {
     Ident(Ident<'a>),
@@ -31,6 +32,8 @@ pub enum Expr<'a> {
     BoolLit(BoolLit),
     NoobLit(NoobLit),
     BinOp(BinOp<'a>),
+    UnaryOp(UnaryOp<'a>),
+    InfiniteOp(InfiniteOp<'a>),
 }
 
 // DeclareVar = Scope 'HAS A' Ident DeclareVarKind
@@ -133,6 +136,33 @@ pub enum BinOpKind {
     And,
     Or,
     Xor,
+}
+
+// UnaryOp = UnaryOpKind Expr
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnaryOp<'a> {
+    pub kind: UnaryOpKind,
+    pub rhs: Box<Expr<'a>>,
+}
+
+// UnaryOpKind = 'NOT'
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnaryOpKind {
+    Not,
+}
+
+// InfiniteOp = InfiniteOpKind 'OF' Expr (('AN')? Expr)* 'MKAY'
+#[derive(Debug, Clone, PartialEq)]
+pub struct InfiniteOp<'a> {
+    pub kind: InfiniteOpKind,
+    pub args: Vec<Expr<'a>>,
+}
+
+// InfiniteOpKind = 'ALL' | 'ANY'
+#[derive(Debug, Clone, PartialEq)]
+pub enum InfiniteOpKind {
+    All,
+    Any,
 }
 
 // Sep = '\n'
