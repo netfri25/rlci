@@ -15,7 +15,8 @@ pub enum Stmt<'a> {
     Assign(Assign<'a>),
 }
 
-// Expr = Ident
+// Expr = It
+//      | Ident
 //      | IntLit
 //      | FloatLit
 //      | StringLit
@@ -26,6 +27,7 @@ pub enum Stmt<'a> {
 //      | InfiniteOp
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr<'a> {
+    It(It),
     Ident(Ident<'a>),
     IntLit(IntLit),
     FloatLit(FloatLit),
@@ -36,6 +38,10 @@ pub enum Expr<'a> {
     UnaryOp(UnaryOp<'a>),
     InfiniteOp(InfiniteOp<'a>),
 }
+
+// It = 'IT'
+#[derive(Debug, Clone, PartialEq)]
+pub struct It;
 
 // DeclareVar = Scope 'HAS A' Ident DeclareVarKind
 #[derive(Debug, Clone, PartialEq)]

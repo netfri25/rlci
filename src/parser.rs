@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::ast::{
-    Assign, BinOp, BinOpKind, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, InfiniteOp, InfiniteOpKind, IntLit, Module, NoobLit, Scope, Seperator, Stmt, StringLit, Type, UnaryOp, UnaryOpKind
+    Assign, BinOp, BinOpKind, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, InfiniteOp, InfiniteOpKind, IntLit, It, Module, NoobLit, Scope, Seperator, Stmt, StringLit, Type, UnaryOp, UnaryOpKind
 };
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
@@ -145,6 +145,10 @@ impl<'a> Parser<'a> {
         Some(typ)
     }
 
+    fn parse_it(&mut self) -> Option<It> {
+        self.expect(TokenKind::It).map(|_| It)
+    }
+
     fn parse_ident(&mut self) -> Option<Ident<'a>> {
         match self.peek(0) {
             TokenKind::Ident => {
@@ -173,6 +177,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expr(&mut self) -> Option<Expr<'a>> {
         match self.peek(0) {
+            TokenKind::It => self.parse_it().map(Expr::It),
             TokenKind::Ident => self.parse_ident().map(Expr::Ident),
             TokenKind::IntLit => self.parse_int_lit().map(Expr::IntLit),
             TokenKind::FloatLit => self.parse_float_lit().map(Expr::FloatLit),

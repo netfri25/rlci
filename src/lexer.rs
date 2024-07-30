@@ -126,6 +126,7 @@ impl<'a> Lexer<'a> {
             ("WON", Won),
             ("AN", An),
             ("OF", Of),
+            ("IT", It),
             ("I", I),
             ("A", A),
             ("R", R),

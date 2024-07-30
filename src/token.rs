@@ -37,6 +37,7 @@ pub enum TokenKind {
     StringLit,
     Win,  // boolean true
     Fail, // boolean false
+    It,   // special 'IT' variable
 
     // keywords
     Hai,

@@ -37,6 +37,7 @@ impl Interpreter {
 
     fn interpret_expr(&mut self, expr: ast::Expr) -> Result<Object> {
         match expr {
+            ast::Expr::It(ast::It) => Ok(self.get_it()),
             ast::Expr::Ident(ident) => {
                 let name = self.eval_ident(ident)?;
                 self.lookup(&name)
@@ -208,6 +209,10 @@ impl Interpreter {
             .remove(name)
             .then_some(())
             .ok_or_else(|| VariableDoesNotExist(name.to_string()))
+    }
+
+    fn get_it(&mut self) -> Object {
+        self.it.clone()
     }
 
     fn escape(&self, input: &str) -> Result<String> {
@@ -470,6 +475,34 @@ mod tests {
                     None
                 ),
                 it: Object::Noob
+            },
+        )
+    }
+
+    #[test]
+    fn it_variable() {
+        // TODO: add a test for short-circuiting after implementing function calls
+        let input = r#"
+        HAI 1.4
+            SUM OF 3 AN 4,
+            I HAS A it_bigger_equals ITZ BOTH SAEM IT AN BIGGR OF IT AN 8
+            I HAS A it_smaller_equals ITZ BOTH SAEM IT AN SMALLR OF IT AN 8
+        KTHXBYE
+        "#;
+        let module = parse(input).unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.interpret_module(module).unwrap();
+        assert_eq!(
+            interpreter,
+            Interpreter {
+                scope: Scope::new(
+                    [
+                        ("it_bigger_equals".into(), Object::Troof(false)),
+                        ("it_smaller_equals".into(), Object::Troof(true)),
+                    ],
+                    None
+                ),
+                it: Object::Numbr(7),
             },
         )
     }
