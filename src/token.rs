@@ -83,6 +83,7 @@ pub enum TokenKind {
 
     // specials
     NewLine, // suggested by Nitay to be called `NewLine` instead of `Newline`
+    Comma,
     Eof,
     Invalid,
 }
@@ -95,7 +96,7 @@ impl TokenKind {
 
     pub fn is_seperator(&self) -> bool {
         use TokenKind::*;
-        matches!(self, NewLine)
+        matches!(self, NewLine | Comma)
     }
 
     pub fn is_valid(&self) -> bool {

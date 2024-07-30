@@ -484,8 +484,7 @@ mod tests {
         // TODO: add a test for short-circuiting after implementing function calls
         let input = r#"
         HAI 1.4
-            SUM OF 3 AN 4,
-            I HAS A it_bigger_equals ITZ BOTH SAEM IT AN BIGGR OF IT AN 8
+            SUM OF 3 AN 4, I HAS A it_bigger_equals ITZ BOTH SAEM IT AN BIGGR OF IT AN 8
             I HAS A it_smaller_equals ITZ BOTH SAEM IT AN SMALLR OF IT AN 8
         KTHXBYE
         "#;

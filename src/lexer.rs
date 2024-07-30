@@ -130,6 +130,7 @@ impl<'a> Lexer<'a> {
             ("I", I),
             ("A", A),
             ("R", R),
+            (",", Comma),
         ];
 
         KEYWORDS.iter().find_map(|(keyword, kind)| {
