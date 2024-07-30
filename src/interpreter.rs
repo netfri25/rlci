@@ -48,7 +48,7 @@ impl Interpreter {
             ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
             ast::Expr::BinOp(op_expr) => self.interpret_bin_op_expr(op_expr),
             ast::Expr::UnaryOp(op_expr) => self.interpret_unary_op_expr(op_expr),
-            ast::Expr::InfiniteOp(op_expr) => self.interpret_infinite_op_expr(op_expr),,
+            ast::Expr::InfiniteOp(op_expr) => self.interpret_infinite_op_expr(op_expr),
         }
     }
 
@@ -80,9 +80,20 @@ impl Interpreter {
             _ => {}
         }
 
-        // integer expressions
         let rhs = self.interpret_expr(*rhs)?;
 
+        // comparisons
+        match kind {
+            ast::BinOpKind::Eq => {
+                return Ok(Object::Troof(lhs == rhs))
+            }
+            ast::BinOpKind::NotEq => {
+                return Ok(Object::Troof(lhs != rhs))
+            }
+            _ => {}
+        }
+
+        // arithmetic expressions
         let lhs_type = lhs.get_type();
         if !lhs_type.is_numeric() {
             return Err(LhsNotNumeric(lhs_type));
@@ -440,6 +451,7 @@ mod tests {
             I HAS A a ITZ BOTH OF "" AN 2465
             I HAS A b ITZ EITHER OF 0. AN NOT NOOB
             I HAS A c ITZ WON OF 0. AN NOOB
+            I HAS A d ITZ BOTH OF DIFFRINT a AN b AN BOTH SAEM a AN c
         KTHXBYE
         "#;
         let module = parse(input).unwrap();
@@ -453,6 +465,7 @@ mod tests {
                         ("a".into(), Object::Troof(false)),
                         ("b".into(), Object::Troof(true)),
                         ("c".into(), Object::Troof(false)),
+                        ("d".into(), Object::Troof(true)),
                     ],
                     None
                 ),

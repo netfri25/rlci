@@ -246,6 +246,12 @@ impl<'a> Parser<'a> {
 
     fn parse_bin_op_kind(&mut self) -> Option<BinOpKind> {
         use TokenKind::*;
+
+        if self.peek(0) == Diffrint {
+            self.next_token();
+            return Some(BinOpKind::NotEq)
+        }
+
         let kind = match (self.peek(1), self.peek(0)) {
             (Of, Sum) => BinOpKind::Add,
             (Of, Diff) => BinOpKind::Sub,
@@ -257,6 +263,7 @@ impl<'a> Parser<'a> {
             (Of, Both) => BinOpKind::And,
             (Of, Either) => BinOpKind::Or,
             (Of, Won) => BinOpKind::Xor,
+            (Saem, Both) => BinOpKind::Eq,
             _ => return None,
         };
 

@@ -103,6 +103,7 @@ impl<'a> Lexer<'a> {
     fn lex_keyword(&self) -> Option<Token<'a>> {
         use TokenKind::*;
         const KEYWORDS: &[(&str, TokenKind)] = &[
+            ("DIFFRINT", Diffrint),
             ("QUOSHUNT", Quoshunt),
             ("KTHXBYE", KThxBye),
             ("PRODUKT", Produkt),
@@ -113,6 +114,7 @@ impl<'a> Lexer<'a> {
             ("DIFF", Diff),
             ("BOTH", Both),
             ("MKAY", Mkay),
+            ("SAEM", Saem),
             ("MOD", Mod),
             ("HAI", Hai),
             ("ITZ", Itz),
@@ -260,7 +262,7 @@ mod tests {
 
     #[test]
     pub fn keywords() {
-        let input = "HAI I HAS A KTHXBYE ITZ A SRS EITHER BOTH NOT WON ANY ALL";
+        let input = "HAI I HAS A KTHXBYE ITZ A SRS EITHER BOTH NOT WON ANY ALL SAEM DIFFRINT";
         let tkns = lex(input);
         assert_eq!(
             tkns,
@@ -278,6 +280,8 @@ mod tests {
                 Token::new(Won, "WON"),
                 Token::new(Any, "ANY"),
                 Token::new(All, "ALL"),
+                Token::new(Saem, "SAEM"),
+                Token::new(Diffrint, "DIFFRINT"),
             ]
         )
     }

@@ -23,6 +23,7 @@ pub enum Stmt<'a> {
 //      | NoobLit
 //      | BinOp
 //      | UnaryOp
+//      | InfiniteOp
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr<'a> {
     Ident(Ident<'a>),
@@ -115,7 +116,7 @@ pub struct NoobLit;
 #[derive(Debug, Clone, PartialEq)]
 pub struct StringLit<'a>(pub &'a str);
 
-// BinOp = BinOpKind 'OF' Expr AN Expr
+// BinOp = BinOpKind Expr AN Expr
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinOp<'a> {
     pub kind: BinOpKind,
@@ -123,7 +124,18 @@ pub struct BinOp<'a> {
     pub rhs: Box<Expr<'a>>,
 }
 
-// BinOpKind = 'SUM' | 'DIFF' | 'PRODUKT' | 'QUOSHUNT' | 'MOD' | 'BIGGR' | 'SMALLR'
+// BinOpKind = 'SUM' 'OF'
+//           | 'DIFF' 'OF'
+//           | 'PRODUKT' 'OF'
+//           | 'QUOSHUNT' 'OF'
+//           | 'MOD' 'OF'
+//           | 'BIGGR' 'OF'
+//           | 'SMALLR' 'OF'
+//           | 'BOTH' 'OF'
+//           | 'EITHER' 'OF'
+//           | 'WON' 'OF'
+//           | 'BOTH' 'SAEM'
+//           | 'DIFFRINT'
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOpKind {
     Add,
@@ -136,6 +148,8 @@ pub enum BinOpKind {
     And,
     Or,
     Xor,
+    Eq, // ==
+    NotEq, // !=
 }
 
 // UnaryOp = UnaryOpKind Expr
