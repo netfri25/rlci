@@ -49,11 +49,10 @@ pub enum TokenKind {
     Srs,
     R,
     An,
-    Of,
     Mkay,
 
     // comparisons
-    Saem,
+    BothSaem,
     Diffrint,
 
     // arithmetics
@@ -72,6 +71,9 @@ pub enum TokenKind {
     Not,
     All,
     Any,
+
+    // Other operators
+    Smoosh,
 
     // types
     Noob,   // nil
@@ -111,7 +113,7 @@ impl TokenKind {
 
     pub fn is_bin_op(&self) -> bool {
         use TokenKind::*;
-        matches!(self, Sum | Diff | Produkt | Quoshunt | Mod | Biggr | Smallr | Both | Either | Won | Saem | Diffrint)
+        matches!(self, Sum | Diff | Produkt | Quoshunt | Mod | Biggr | Smallr | Both | Either | Won | BothSaem | Diffrint)
     }
 
     pub fn is_unary_op(&self) -> bool {
@@ -121,6 +123,6 @@ impl TokenKind {
 
     pub fn is_infinite_op(&self) -> bool {
         use TokenKind::*;
-        matches!(self, All | Any)
+        matches!(self, All | Any | Smoosh)
     }
 }

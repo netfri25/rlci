@@ -257,22 +257,21 @@ impl<'a> Parser<'a> {
             return Some(BinOpKind::NotEq)
         }
 
-        let kind = match (self.peek(1), self.peek(0)) {
-            (Of, Sum) => BinOpKind::Add,
-            (Of, Diff) => BinOpKind::Sub,
-            (Of, Produkt) => BinOpKind::Mul,
-            (Of, Quoshunt) => BinOpKind::Div,
-            (Of, Mod) => BinOpKind::Mod,
-            (Of, Biggr) => BinOpKind::Max,
-            (Of, Smallr) => BinOpKind::Min,
-            (Of, Both) => BinOpKind::And,
-            (Of, Either) => BinOpKind::Or,
-            (Of, Won) => BinOpKind::Xor,
-            (Saem, Both) => BinOpKind::Eq,
-            _ => return None,
+        let kind = match self.peek(0) {
+            Sum => BinOpKind::Add,
+            Diff => BinOpKind::Sub,
+            Produkt => BinOpKind::Mul,
+            Quoshunt => BinOpKind::Div,
+            Mod => BinOpKind::Mod,
+            Biggr => BinOpKind::Max,
+            Smallr => BinOpKind::Min,
+            Both => BinOpKind::And,
+            Either => BinOpKind::Or,
+            Won => BinOpKind::Xor,
+            BothSaem => BinOpKind::Eq,
+            _ => return None
         };
 
-        self.next_token();
         self.next_token();
         Some(kind)
     }
@@ -301,6 +300,7 @@ impl<'a> Parser<'a> {
             }
         }
 
+        self.next_token(); // skip the MKAY token
         Some(InfiniteOp { kind, args })
     }
 
@@ -308,6 +308,7 @@ impl<'a> Parser<'a> {
         let kind = match self.peek(0) {
             TokenKind::All => InfiniteOpKind::All,
             TokenKind::Any => InfiniteOpKind::Any,
+            TokenKind::Smoosh => InfiniteOpKind::Smoosh,
             _ => return None,
         };
 

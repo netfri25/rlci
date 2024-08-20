@@ -130,17 +130,17 @@ pub struct BinOp<'a> {
     pub rhs: Box<Expr<'a>>,
 }
 
-// BinOpKind = 'SUM' 'OF'
-//           | 'DIFF' 'OF'
-//           | 'PRODUKT' 'OF'
-//           | 'QUOSHUNT' 'OF'
-//           | 'MOD' 'OF'
-//           | 'BIGGR' 'OF'
-//           | 'SMALLR' 'OF'
-//           | 'BOTH' 'OF'
-//           | 'EITHER' 'OF'
-//           | 'WON' 'OF'
-//           | 'BOTH' 'SAEM'
+// BinOpKind = 'SUM OF'
+//           | 'DIFF OF'
+//           | 'PRODUKT OF'
+//           | 'QUOSHUNT OF'
+//           | 'MOD OF'
+//           | 'BIGGR OF'
+//           | 'SMALLR OF'
+//           | 'BOTH OF'
+//           | 'EITHER OF'
+//           | 'WON OF'
+//           | 'BOTH SAEM'
 //           | 'DIFFRINT'
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOpKind {
@@ -171,18 +171,19 @@ pub enum UnaryOpKind {
     Not,
 }
 
-// InfiniteOp = InfiniteOpKind 'OF' Expr (('AN')? Expr)* 'MKAY'
+// InfiniteOp = InfiniteOpKind Expr (('AN')? Expr)* 'MKAY'
 #[derive(Debug, Clone, PartialEq)]
 pub struct InfiniteOp<'a> {
     pub kind: InfiniteOpKind,
     pub args: Vec<Expr<'a>>,
 }
 
-// InfiniteOpKind = 'ALL' | 'ANY'
+// InfiniteOpKind = 'ALL OF' | 'ANY OF' | 'SMOOSH'
 #[derive(Debug, Clone, PartialEq)]
 pub enum InfiniteOpKind {
     All,
     Any,
+    Smoosh,
 }
 
 // Sep = '\n'

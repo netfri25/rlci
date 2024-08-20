@@ -103,29 +103,29 @@ impl<'a> Lexer<'a> {
     fn lex_keyword(&self) -> Option<Token<'a>> {
         use TokenKind::*;
         const KEYWORDS: &[(&str, TokenKind)] = &[
+            ("QUOSHUNT OF", Quoshunt),
+            ("PRODUKT OF", Produkt),
+            ("BOTH SAEM", BothSaem),
+            ("SMALLR OF", Smallr),
+            ("EITHER OF", Either),
             ("DIFFRINT", Diffrint),
-            ("QUOSHUNT", Quoshunt),
+            ("BIGGR OF", Biggr),
             ("KTHXBYE", KThxBye),
-            ("PRODUKT", Produkt),
-            ("SMALLR", Smallr),
-            ("EITHER", Either),
-            ("BIGGR", Biggr),
+            ("DIFF OF", Diff),
+            ("BOTH OF", Both),
+            ("WON OF", Won),
+            ("SMOOSH", Smoosh),
+            ("MOD OF", Mod),
+            ("SUM OF", Sum),
+            ("ALL OF", All),
+            ("ANY OF", Any),
             ("HAS A", HasA),
-            ("DIFF", Diff),
-            ("BOTH", Both),
             ("MKAY", Mkay),
-            ("SAEM", Saem),
-            ("MOD", Mod),
             ("HAI", Hai),
             ("ITZ", Itz),
             ("SRS", Srs),
-            ("SUM", Sum),
             ("NOT", Not),
-            ("ALL", All),
-            ("ANY", Any),
-            ("WON", Won),
             ("AN", An),
-            ("OF", Of),
             ("IT", It),
             ("I", I),
             ("A", A),
@@ -264,7 +264,7 @@ mod tests {
 
     #[test]
     pub fn keywords() {
-        let input = "HAI I HAS A KTHXBYE ITZ A SRS EITHER BOTH NOT WON ANY ALL SAEM DIFFRINT";
+        let input = "HAI I HAS A KTHXBYE ITZ A SRS EITHER OF BOTH OF NOT WON OF ANY OF ALL OF DIFFRINT";
         let tkns = lex(input);
         assert_eq!(
             tkns,
@@ -276,13 +276,12 @@ mod tests {
                 Token::new(Itz, "ITZ"),
                 Token::new(A, "A"),
                 Token::new(Srs, "SRS"),
-                Token::new(Either, "EITHER"),
-                Token::new(Both, "BOTH"),
+                Token::new(Either, "EITHER OF"),
+                Token::new(Both, "BOTH OF"),
                 Token::new(Not, "NOT"),
-                Token::new(Won, "WON"),
-                Token::new(Any, "ANY"),
-                Token::new(All, "ALL"),
-                Token::new(Saem, "SAEM"),
+                Token::new(Won, "WON OF"),
+                Token::new(Any, "ANY OF"),
+                Token::new(All, "ALL OF"),
                 Token::new(Diffrint, "DIFFRINT"),
             ]
         )
@@ -351,20 +350,19 @@ mod tests {
 
     #[test]
     fn operators() {
-        let input = "AN OF SUM DIFF PRODUKT QUOSHUNT MOD BIGGR SMALLR";
+        let input = "AN SUM OF DIFF OF PRODUKT OF QUOSHUNT OF MOD OF BIGGR OF SMALLR OF";
         let tkns = lex(input);
         assert_eq!(
             tkns,
             vec![
                 Token::new(TokenKind::An, "AN"),
-                Token::new(TokenKind::Of, "OF"),
-                Token::new(TokenKind::Sum, "SUM"),
-                Token::new(TokenKind::Diff, "DIFF"),
-                Token::new(TokenKind::Produkt, "PRODUKT"),
-                Token::new(TokenKind::Quoshunt, "QUOSHUNT"),
-                Token::new(TokenKind::Mod, "MOD"),
-                Token::new(TokenKind::Biggr, "BIGGR"),
-                Token::new(TokenKind::Smallr, "SMALLR"),
+                Token::new(TokenKind::Sum, "SUM OF"),
+                Token::new(TokenKind::Diff, "DIFF OF"),
+                Token::new(TokenKind::Produkt, "PRODUKT OF"),
+                Token::new(TokenKind::Quoshunt, "QUOSHUNT OF"),
+                Token::new(TokenKind::Mod, "MOD OF"),
+                Token::new(TokenKind::Biggr, "BIGGR OF"),
+                Token::new(TokenKind::Smallr, "SMALLR OF"),
             ]
         )
     }

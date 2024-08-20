@@ -126,19 +126,47 @@ impl Interpreter {
     }
 
     fn interpret_infinite_op_expr(&mut self, ast::InfiniteOp { kind, args }: ast::InfiniteOp) -> Result<Object> {
-        let break_when = match &kind {
-            ast::InfiniteOpKind::All => false,
-            ast::InfiniteOpKind::Any => true,
+        let callback = match kind {
+            ast::InfiniteOpKind::All => Self::interpret_infinite_all_operator,
+            ast::InfiniteOpKind::Any => Self::interpret_infinite_any_operator,
+            ast::InfiniteOpKind::Smoosh => Self::interpret_infinite_smoosh_operator,
         };
 
+        callback(self, args)
+    }
+
+    fn interpret_infinite_all_operator(&mut self, args: Vec<ast::Expr>) -> Result<Object> {
         for arg in args {
             let value = self.interpret_expr(arg)?.as_bool();
-            if value == break_when {
-                return Ok(Object::Troof(break_when))
+            // short-circuiting on a `false` value
+            if !value {
+                return Ok(Object::Troof(false))
             }
         }
 
-        Ok(Object::Troof(!break_when))
+        Ok(Object::Troof(true))
+    }
+
+    fn interpret_infinite_any_operator(&mut self, args: Vec<ast::Expr>) -> Result<Object> {
+        for arg in args {
+            let value = self.interpret_expr(arg)?.as_bool();
+            // short-circuiting on a `true` value
+            if value {
+                return Ok(Object::Troof(true))
+            }
+        }
+
+        Ok(Object::Troof(false))
+    }
+
+    fn interpret_infinite_smoosh_operator(&mut self, args: Vec<ast::Expr>) -> Result<Object> {
+        let mut acc = String::new();
+        for arg in args {
+            let value = self.interpret_expr(arg)?.as_yarn();
+            acc += &value;
+        }
+
+        Ok(Object::Yarn(acc))
     }
 
     fn interpret_declare_var(&mut self, decl_var: ast::DeclareVar) -> Result<()> {
@@ -504,6 +532,24 @@ mod tests {
                 it: Object::Numbr(7),
             },
         )
+    }
+
+    #[test]
+    fn smoosh() {
+        // language=rust
+        let input = r#"
+        HAI 1.4
+            I HAS A x ITZ 420
+            I HAS A y ITZ 0.69
+            I HAS A a ITZ "OMG NO WAI"
+            I HAS A result ITZ SMOOSH x AN y AN a MKAY
+        KTHXBYE
+        "#;
+        let module = parse(input).unwrap();
+        let mut interpreter = Interpreter::new();
+        interpreter.interpret_module(module).unwrap();
+        let result = interpreter.scope.lookup("result").unwrap();
+        assert_eq!(result, &Object::Yarn("4200.69OMG NO WAI".into()))
     }
 
     fn parse(input: &'static str) -> Option<ast::Module<'static>> {

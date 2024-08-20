@@ -38,6 +38,10 @@ impl Object {
         }
     }
 
+    pub fn as_yarn(&self) -> String {
+        self.to_string()
+    }
+
     pub fn get_type(&self) -> ObjectType {
         match self {
             Object::Noob => ObjectType::Noob,
