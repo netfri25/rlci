@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+diff-enum = "0.1.4"
 thiserror = "1.0.63"
 
 [dev-dependencies]
