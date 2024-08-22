@@ -1,8 +1,5 @@
 use std::collections::VecDeque;
 
-use crate::ast::{
-    Assign, BinOp, BinOpKind, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, InfiniteOp, InfiniteOpKind, IntLit, It, Module, NoobLit, Scope, Seperator, Stmt, StringLit, Type, UnaryOp, UnaryOpKind
-};
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenKind};
 
@@ -17,37 +14,6 @@ impl<'a> Parser<'a> {
             lexer,
             peek_queue: Default::default(),
         }
-    }
-
-    pub fn parse_module(&mut self) -> Option<Module<'a>> {
-        if self.peek(0).is_seperator() {
-            self.parse_seperator();
-        }
-
-        self.expect(TokenKind::Hai)?;
-        let FloatLit(version) = self.parse_float_lit()?;
-        self.parse_seperator();
-
-        let mut stmts = Vec::new();
-
-        while self.peek(0) != TokenKind::KThxBye {
-            if let Some(stmt) = self.parse_stmt() {
-                stmts.push(stmt);
-            } else {
-                // skip to the next seperator so it can report more errors in the rest of the file
-                while {
-                    let tkn = self.peek(0);
-                    tkn.is_valid() && !tkn.is_seperator()
-                } {
-                    self.next_token();
-                }
-            };
-
-            self.parse_seperator()?;
-        }
-
-        self.expect(TokenKind::KThxBye)?;
-        Some(Module { version, stmts })
     }
 
     fn next_token(&mut self) -> Token<'a> {
@@ -86,50 +52,6 @@ impl<'a> Parser<'a> {
         self.expect_pred(|kind| kind == expected_kind)
     }
 
-    fn parse_stmt(&mut self) -> Option<Stmt<'a>> {
-        match self.peek(0) {
-            tkn if tkn == TokenKind::Srs
-                || tkn == TokenKind::Ident && self.peek(1) == TokenKind::R =>
-            {
-                self.parse_assign().map(Stmt::Assign)
-            }
-            tkn if tkn.is_scope() && self.peek(1) == TokenKind::HasA => {
-                self.parse_declare_var().map(Stmt::DeclareVar)
-            }
-            _ => self.parse_expr().map(Stmt::Expr),
-        }
-    }
-
-    fn parse_assign(&mut self) -> Option<Assign<'a>> {
-        let target = self.parse_ident()?;
-        self.expect(TokenKind::R)?;
-        let expr = self.parse_expr()?;
-        Some(Assign { target, expr })
-    }
-
-    fn parse_declare_var(&mut self) -> Option<DeclareVar<'a>> {
-        let scope = self.parse_scope()?;
-        self.expect(TokenKind::HasA)?;
-        let name = self.parse_ident()?;
-        let kind = self.parse_declare_var_kind()?;
-        Some(DeclareVar { scope, name, kind })
-    }
-
-    fn parse_declare_var_kind(&mut self) -> Option<DeclareVarKind<'a>> {
-        if self.peek(0).is_seperator() {
-            return Some(DeclareVarKind::Empty);
-        }
-
-        self.expect(TokenKind::Itz)?;
-
-        if self.peek(0) != TokenKind::A {
-            return self.parse_expr().map(DeclareVarKind::WithExpr);
-        }
-
-        self.expect(TokenKind::A)?;
-        self.parse_type().map(DeclareVarKind::WithType)
-    }
-
     fn parse_type(&mut self) -> Option<Type> {
         let typ = match self.peek(0) {
             TokenKind::Noob => Type::Noob,
@@ -143,52 +65,6 @@ impl<'a> Parser<'a> {
 
         self.next_token();
         Some(typ)
-    }
-
-    fn parse_it(&mut self) -> Option<It> {
-        self.expect(TokenKind::It).map(|_| It)
-    }
-
-    fn parse_ident(&mut self) -> Option<Ident<'a>> {
-        match self.peek(0) {
-            TokenKind::Ident => {
-                let tkn = self.next_token();
-                Some(Ident::Literal(tkn.text()))
-            }
-            TokenKind::Srs => {
-                let _srs = self.next_token();
-                let expr = self.parse_expr()?;
-                Some(Ident::Srs(Box::new(expr)))
-            }
-            _ => None,
-        }
-    }
-
-    fn parse_scope(&mut self) -> Option<Scope<'a>> {
-        match self.peek(0) {
-            TokenKind::I => {
-                self.next_token();
-                Some(Scope::Current)
-            }
-            TokenKind::Ident => self.parse_ident().map(Scope::Var),
-            _ => None, // TODO: report error
-        }
-    }
-
-    fn parse_expr(&mut self) -> Option<Expr<'a>> {
-        match self.peek(0) {
-            TokenKind::It => self.parse_it().map(Expr::It),
-            TokenKind::Ident => self.parse_ident().map(Expr::Ident),
-            TokenKind::IntLit => self.parse_int_lit().map(Expr::IntLit),
-            TokenKind::FloatLit => self.parse_float_lit().map(Expr::FloatLit),
-            TokenKind::StringLit => self.parse_string_lit().map(Expr::StringLit),
-            TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
-            TokenKind::Noob => self.parse_noob_lit().map(Expr::NoobLit),
-            tkn if tkn.is_bin_op() => self.parse_bin_op().map(Expr::BinOp),
-            tkn if tkn.is_unary_op() => self.parse_unary_op().map(Expr::UnaryOp),
-            tkn if tkn.is_infinite_op() => self.parse_infinite_op().map(Expr::InfiniteOp),
-            _ => None, // TODO: report error
-        }
     }
 
     fn parse_seperator(&mut self) -> Option<Seperator> {
@@ -241,14 +117,6 @@ impl<'a> Parser<'a> {
         Some(StringLit(text))
     }
 
-    fn parse_bin_op(&mut self) -> Option<BinOp<'a>> {
-        let kind = self.parse_bin_op_kind()?;
-        let lhs = self.parse_expr().map(Box::new)?;
-        self.expect(TokenKind::An)?;
-        let rhs = self.parse_expr().map(Box::new)?;
-        Some(BinOp { kind, lhs, rhs })
-    }
-
     fn parse_bin_op_kind(&mut self) -> Option<BinOpKind> {
         use TokenKind::*;
 
@@ -258,16 +126,16 @@ impl<'a> Parser<'a> {
         }
 
         let kind = match self.peek(0) {
-            Sum => BinOpKind::Add,
-            Diff => BinOpKind::Sub,
-            Produkt => BinOpKind::Mul,
-            Quoshunt => BinOpKind::Div,
-            Mod => BinOpKind::Mod,
-            Biggr => BinOpKind::Max,
-            Smallr => BinOpKind::Min,
-            Both => BinOpKind::And,
-            Either => BinOpKind::Or,
-            Won => BinOpKind::Xor,
+            SumOf => BinOpKind::Add,
+            DiffOf => BinOpKind::Sub,
+            ProduktOf => BinOpKind::Mul,
+            QuoshuntOf => BinOpKind::Div,
+            ModOf => BinOpKind::Mod,
+            BiggrOf => BinOpKind::Max,
+            SmallrOf => BinOpKind::Min,
+            BothOf => BinOpKind::And,
+            EitherOf => BinOpKind::Or,
+            WonOf => BinOpKind::Xor,
             BothSaem => BinOpKind::Eq,
             _ => return None
         };
@@ -276,38 +144,10 @@ impl<'a> Parser<'a> {
         Some(kind)
     }
 
-    fn parse_unary_op(&mut self) -> Option<UnaryOp<'a>> {
-        let kind = self.parse_unary_op_kind()?;
-        let rhs = self.parse_expr().map(Box::new)?;
-        Some(UnaryOp { kind, rhs })
-    }
-
-    fn parse_unary_op_kind(&mut self) -> Option<UnaryOpKind> {
-        self.expect(TokenKind::Not)?;
-        Some(UnaryOpKind::Not)
-    }
-
-    fn parse_infinite_op(&mut self) -> Option<InfiniteOp<'a>> {
-        let kind = self.parse_infinite_op_kind()?;
-        let mut args = Vec::new();
-
-        while self.peek(0) != TokenKind::Mkay {
-            let expr = self.parse_expr()?;
-            args.push(expr);
-
-            if self.peek(0) == TokenKind::An {
-                self.next_token();
-            }
-        }
-
-        self.next_token(); // skip the MKAY token
-        Some(InfiniteOp { kind, args })
-    }
-
     fn parse_infinite_op_kind(&mut self) -> Option<InfiniteOpKind> {
         let kind = match self.peek(0) {
-            TokenKind::All => InfiniteOpKind::All,
-            TokenKind::Any => InfiniteOpKind::Any,
+            TokenKind::AllOf => InfiniteOpKind::All,
+            TokenKind::AnyOf => InfiniteOpKind::Any,
             TokenKind::Smoosh => InfiniteOpKind::Smoosh,
             _ => return None,
         };

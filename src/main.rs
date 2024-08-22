@@ -1,9 +1,6 @@
 mod ast;
-mod interpreter;
 mod lexer;
-mod object;
-mod parser;
-mod scope;
+// mod parser;
 mod token;
 
 fn main() {
