@@ -2,10 +2,10 @@ use crate::token::Loc;
 use diff_enum::common_fields;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Program {
-    loc: Loc,
-    version: f64,
-    block: Block,
+pub struct Module {
+    pub loc: Loc,
+    pub version: f64,
+    pub block: Block,
 }
 
 pub type Block = Vec<Stmt>;
@@ -97,7 +97,7 @@ pub struct Assign {
 pub struct Declare {
     pub loc: Loc,
     pub target: Ident,
-    pub init: Init,
+    pub init: Option<Init>,
 }
 
 #[common_fields { loc: Loc }]
