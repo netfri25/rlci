@@ -1,7 +1,20 @@
 use std::collections::VecDeque;
 
+use crate::ast::{
+    BinaryOp, BinaryOpKind, BoolLit, Expr, FloatLit, IntLit, NaryOp, NaryOpKind, NoobLit, Seperator, StringLit, Type, UnaryOp, UnaryOpKind
+};
 use crate::lexer::Lexer;
-use crate::token::{Token, TokenKind};
+use crate::token::{Loc, Token, TokenKind};
+
+macro_rules! mk {
+    ($self:ident, $p:path) => {{
+        $p { loc: $self.loc().clone() }
+    }};
+
+    ($self:ident, $p:path, $($params:tt)+) => {{
+        $p { loc: $self.loc().clone(), $($params)* }
+    }};
+}
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -16,6 +29,10 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn loc(&mut self) -> &Loc {
+        self.peek_token(0).loc()
+    }
+
     fn next_token(&mut self) -> Token<'a> {
         self.peek_queue
             .pop_front()
@@ -23,18 +40,23 @@ impl<'a> Parser<'a> {
     }
 
     #[must_use]
-    fn peek(&mut self, off: usize) -> TokenKind {
+    fn peek_token(&mut self, off: usize) -> &Token {
         if self.peek_queue.len() <= off {
             let to_peek = off + 1 - self.peek_queue.len();
             let tokens = (0..to_peek).map(|_| self.lexer.next_token());
             self.peek_queue.extend(tokens);
         }
 
-        self.peek_queue[off].kind()
+        &self.peek_queue[off]
     }
 
     #[must_use]
-    fn expect_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
+    fn peek(&mut self, off: usize) -> TokenKind {
+        self.peek_token(off).kind()
+    }
+
+    #[must_use]
+    fn accept_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
         if pred(self.peek(0)) {
             let tkn = self
                 .peek_queue
@@ -48,18 +70,18 @@ impl<'a> Parser<'a> {
     }
 
     #[must_use]
-    fn expect(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
-        self.expect_pred(|kind| kind == expected_kind)
+    fn accept(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
+        self.accept_pred(|kind| kind == expected_kind)
     }
 
     fn parse_type(&mut self) -> Option<Type> {
         let typ = match self.peek(0) {
-            TokenKind::Noob => Type::Noob,
-            TokenKind::Troof => Type::Troof,
-            TokenKind::Numbr => Type::Numbr,
-            TokenKind::Numbar => Type::Numbar,
-            TokenKind::Yarn => Type::Yarn,
-            TokenKind::Bukkit => Type::Bukkit,
+            TokenKind::Noob => mk!(self, Type::Noob),
+            TokenKind::Troof => mk!(self, Type::Troof),
+            TokenKind::Numbr => mk!(self, Type::Numbr),
+            TokenKind::Numbar => mk!(self, Type::Numbar),
+            TokenKind::Yarn => mk!(self, Type::Yarn),
+            TokenKind::Bukkit => mk!(self, Type::Bukkit),
             _ => return None, // TODO: report error
         };
 
@@ -68,14 +90,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_seperator(&mut self) -> Option<Seperator> {
-        self.expect_pred(|kind| kind.is_seperator())?;
-        Some(Seperator)
+        let tkn = self.accept_pred(|kind| kind.is_seperator())?;
+        Some(Seperator { loc: tkn.loc })
     }
 
     fn parse_int_lit(&mut self) -> Option<IntLit> {
-        let tkn = self.expect(TokenKind::IntLit)?;
+        let tkn = self.accept(TokenKind::IntLit)?;
         match tkn.text().parse() {
-            Ok(value) => Some(IntLit(value)),
+            Ok(value) => Some(mk!(self, IntLit, value)),
             Err(_err) => {
                 // TODO: report error
                 None
@@ -84,9 +106,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_float_lit(&mut self) -> Option<FloatLit> {
-        let tkn = self.expect(TokenKind::FloatLit)?;
+        let tkn = self.accept(TokenKind::FloatLit)?;
         match tkn.text().parse() {
-            Ok(value) => Some(FloatLit(value)),
+            Ok(value) => Some(mk!(self, FloatLit, value)),
             Err(_err) => {
                 // TODO: report error
                 None
@@ -97,8 +119,8 @@ impl<'a> Parser<'a> {
     fn parse_bool_lit(&mut self) -> Option<BoolLit> {
         let kind = self.peek(0);
         let bool_lit = match kind {
-            TokenKind::Win => BoolLit(true),
-            TokenKind::Fail => BoolLit(false),
+            TokenKind::Win => mk!(self, BoolLit, value: true),
+            TokenKind::Fail => mk!(self, BoolLit, value: false),
             _ => return None,
         };
         self.next_token();
@@ -106,54 +128,70 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_noob_lit(&mut self) -> Option<NoobLit> {
-        self.expect(TokenKind::Noob)?;
-        Some(NoobLit)
+        let tkn = self.accept(TokenKind::Noob)?;
+        Some(NoobLit { loc: tkn.loc })
     }
 
-    fn parse_string_lit(&mut self) -> Option<StringLit<'a>> {
-        let tkn = self.expect(TokenKind::StringLit)?;
+    fn parse_string_lit(&mut self) -> Option<StringLit> {
+        let tkn = self.accept(TokenKind::StringLit)?;
         let len = tkn.text().len() - 1;
-        let text = &tkn.text()[1..len];
-        Some(StringLit(text))
+        let value = tkn.text()[1..len].into();
+        Some(StringLit { loc: tkn.loc, value })
     }
 
-    fn parse_bin_op_kind(&mut self) -> Option<BinOpKind> {
+    fn parse_unary_op(&mut self) -> Option<UnaryOp> {
         use TokenKind::*;
 
-        if self.peek(0) == Diffrint {
-            self.next_token();
-            return Some(BinOpKind::NotEq)
-        }
-
         let kind = match self.peek(0) {
-            SumOf => BinOpKind::Add,
-            DiffOf => BinOpKind::Sub,
-            ProduktOf => BinOpKind::Mul,
-            QuoshuntOf => BinOpKind::Div,
-            ModOf => BinOpKind::Mod,
-            BiggrOf => BinOpKind::Max,
-            SmallrOf => BinOpKind::Min,
-            BothOf => BinOpKind::And,
-            EitherOf => BinOpKind::Or,
-            WonOf => BinOpKind::Xor,
-            BothSaem => BinOpKind::Eq,
-            _ => return None
-        };
-
-        self.next_token();
-        Some(kind)
-    }
-
-    fn parse_infinite_op_kind(&mut self) -> Option<InfiniteOpKind> {
-        let kind = match self.peek(0) {
-            TokenKind::AllOf => InfiniteOpKind::All,
-            TokenKind::AnyOf => InfiniteOpKind::Any,
-            TokenKind::Smoosh => InfiniteOpKind::Smoosh,
+            Not => UnaryOpKind::Not,
             _ => return None,
         };
 
-        self.next_token();
-        Some(kind)
+        let loc = self.next_token().loc;
+        let expr = self.parse_expr().map(Box::new)?;
+        Some(UnaryOp { loc, kind, expr })
+    }
+
+    fn parse_binary_op(&mut self) -> Option<BinaryOp> {
+        use TokenKind::*;
+
+        let kind = match self.peek(0) {
+            SumOf => BinaryOpKind::Add,
+            DiffOf => BinaryOpKind::Sub,
+            ProduktOf => BinaryOpKind::Mul,
+            QuoshuntOf => BinaryOpKind::Div,
+            ModOf => BinaryOpKind::Mod,
+            BiggrOf => BinaryOpKind::Max,
+            SmallrOf => BinaryOpKind::Min,
+            BothOf => BinaryOpKind::And,
+            EitherOf => BinaryOpKind::Or,
+            WonOf => BinaryOpKind::Xor,
+            BothSaem => BinaryOpKind::Eq,
+            Diffrint => BinaryOpKind::NotEq,
+            _ => return None
+        };
+
+        let loc = self.next_token().loc;
+        let lhs = self.parse_expr().map(Box::new)?;
+        self.accept(TokenKind::An)?;
+        let rhs = self.parse_expr().map(Box::new)?;
+        Some(BinaryOp { loc, kind, lhs, rhs })
+    }
+
+    fn parse_n_ary_op(&mut self) -> Option<NaryOp> {
+        let kind = match self.peek(0) {
+            TokenKind::AllOf => NaryOpKind::AllOf,
+            TokenKind::AnyOf => NaryOpKind::AnyOf,
+            TokenKind::Smoosh => NaryOpKind::Smoosh,
+            _ => return None,
+        };
+
+        let loc = self.next_token().loc;
+        todo!("n ary op")
+    }
+
+    fn parse_expr(&mut self) -> Option<Expr> {
+        todo!()
     }
 }
 

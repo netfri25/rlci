@@ -5,9 +5,9 @@ use std::rc::Rc;
 // TODO: store the position in the file for better error reporting
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'a> {
-    kind: TokenKind,
-    text: &'a str,
-    loc: Loc,
+    pub kind: TokenKind,
+    pub text: &'a str,
+    pub loc: Loc,
 }
 
 impl<'a> Token<'a> {

@@ -35,11 +35,17 @@ pub struct StringLit {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct NoobLit {
+    pub loc: Loc,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Bool(BoolLit),
     Int(IntLit),
     Float(FloatLit),
     String(StringLit),
+    Noob(NoobLit),
 }
 
 #[common_fields { loc: Loc }]
@@ -297,6 +303,8 @@ pub enum BinaryOpKind {
     And,
     Or,
     Xor,
+    Eq,
+    NotEq,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -315,5 +323,10 @@ pub enum NaryOpKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Implicit {
+    pub loc: Loc,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Seperator {
     pub loc: Loc,
 }
