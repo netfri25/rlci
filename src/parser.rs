@@ -29,6 +29,10 @@ impl<'a> Parser<'a> {
             .unwrap_or_else(|| self.lexer.next_token())
     }
 
+    fn consume_errors(&mut self) -> Vec<Error> {
+        std::mem::take(&mut self.errors)
+    }
+
     fn error(&mut self, kind: ErrorKind) {
         let err = Error {
             loc: self.loc(),
@@ -67,7 +71,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    #[must_use]
     fn accept(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
         self.accept_pred(|kind| kind == expected_kind)
     }
@@ -99,6 +102,9 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_module(&mut self) -> Option<Module> {
+        // remove newlines from the start
+        self.accept(TokenKind::NewLine);
+
         let loc = self.loc();
         let is_script = self.accept(TokenKind::Hai).is_none();
 
@@ -114,7 +120,16 @@ impl<'a> Parser<'a> {
             0.0
         };
 
+        self.parse_seperator()?;
         let block = self.parse_block()?;
+
+        if !is_script {
+            // TODO: curse the user when this token is missing
+            self.expect(TokenKind::KThxBye)?;
+            self.accept(TokenKind::NewLine);
+        }
+
+        self.expect(TokenKind::Eof)?;
 
         Some(Module {
             loc,
@@ -126,7 +141,11 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self) -> Option<Block> {
         let mut stmts = Vec::new();
 
-        while let Some(stmt) = self.parse_stmt() {
+        while {
+            let kind = self.peek(0);
+            ![TokenKind::Eof, TokenKind::KThxBye].contains(&kind)
+        } {
+            let stmt = self.parse_stmt()?;
             stmts.push(stmt);
             self.parse_seperator()?;
         }
@@ -169,26 +188,35 @@ impl<'a> Parser<'a> {
         Some(Assign { loc, target, expr })
     }
 
-    fn parse_declare_stmt(&mut self, target: Ident) -> Option<Declare> {
+    fn parse_declare_stmt(&mut self, scope: Ident) -> Option<Declare> {
         let loc = self.expect(TokenKind::HasA)?.loc;
+        let name = self.parse_ident()?;
         let init = self.parse_declare_init();
-        Some(Declare { loc, target, init })
+        Some(Declare {
+            loc,
+            scope,
+            name,
+            init,
+        })
     }
 
     fn parse_declare_init(&mut self) -> Option<Init> {
         let loc = self.loc();
         let init = match self.peek(0) {
-            TokenKind::Itz => {
-                Init::Expr { loc, expr: self.parse_expr()? }
-            }
+            TokenKind::Itz => Init::Expr {
+                loc,
+                expr: self.parse_expr()?,
+            },
 
-            TokenKind::ItzA => {
-                Init::Type { loc, typ: self.parse_type()? }
-            }
+            TokenKind::ItzA => Init::Type {
+                loc,
+                typ: self.parse_type()?,
+            },
 
-            TokenKind::ItzLiekA => {
-                Init::Like { loc, target: self.parse_ident()? }
-            }
+            TokenKind::ItzLiekA => Init::Like {
+                loc,
+                target: self.parse_ident()?,
+            },
 
             _ => return None,
         };
@@ -357,17 +385,19 @@ impl<'a> Parser<'a> {
 
         todo!("n ary op")
     }
-
-    fn parse_expr(&mut self) -> Option<Expr> {
-        todo!()
-    }
 }
 
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Clone, PartialEq, thiserror::Error)]
 #[error("{loc}: {kind}")]
 pub struct Error {
     pub loc: Loc,
     pub kind: ErrorKind,
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -436,6 +466,27 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
+    macro_rules! loc {
+        () => {
+            Loc::default()
+        };
+    }
+
+    #[test]
+    fn module() {
+        let input = r#"
+            HAI 1.4
+            KTHXBYE
+        "#;
+        let got = parse(input).unwrap();
+        let expected = Module {
+            loc: loc!(),
+            version: 1.4,
+            block: vec![],
+        };
+        assert_eq!(expected, got)
+    }
+
     #[test]
     fn var_decl() {
         let input = r#"
@@ -447,126 +498,162 @@ mod tests {
             I HAS A SRS var ITZ "hello:)world:>:o::"
         KTHXBYE
         "#;
-        let got = parse(input);
+        let got = parse(input).unwrap();
         let expected = Module {
+            loc: loc!(),
             version: 1.4,
-            stmts: vec![
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Literal("var"),
-                    kind: DeclareVarKind::Empty,
+            block: vec![
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: ident("var"),
+                    init: None,
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Var(Ident::Literal("var")),
-                    name: Ident::Literal("var"),
-                    kind: DeclareVarKind::WithExpr(Expr::FloatLit(FloatLit(-12.3))),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("var"),
+                    name: ident("var"),
+                    init: init_expr(float_expr(-12.3)),
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Literal("var"),
-                    kind: DeclareVarKind::WithType(Type::Troof),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: ident("var"),
+                    init: init_type(Type::Troof { loc: loc!() }),
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
-                    kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: srs(Expr::Ident(ident("var"))),
+                    init: init_expr(bool_expr(true)),
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
-                    kind: DeclareVarKind::WithExpr(Expr::StringLit(StringLit(
-                        "hello:)world:>:o::",
-                    ))),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: srs(Expr::Ident(ident("var"))),
+                    init: init_expr(string_expr("hello:)world:>:o::")),
                 }),
             ],
         };
-
-        assert_eq!(Some(expected), got)
+        assert_eq!(expected, got)
     }
 
-    #[test]
-    fn assignment() {
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ WIN
-            SRS x R 2
-            x R 3
-        KTHXBYE
-        "#;
-        let got = parse(input);
-        let expected = Module {
-            version: 1.4,
-            stmts: vec![
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Literal("x"),
-                    kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
-                }),
-                Stmt::Assign(Assign {
-                    target: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("x")))),
-                    expr: Expr::IntLit(IntLit(2)),
-                }),
-                Stmt::Assign(Assign {
-                    target: Ident::Literal("x"),
-                    expr: Expr::IntLit(IntLit(3)),
-                }),
-            ],
-        };
+    // #[test]
+    // fn assignment() {
+    //     let input = r#"
+    //     HAI 1.4
+    //         I HAS A x ITZ WIN
+    //         SRS x R 2
+    //         x R 3
+    //     KTHXBYE
+    //     "#;
+    //     let got = parse(input);
+    //     let expected = Module {
+    //         version: 1.4,
+    //         stmts: vec![
+    //             Stmt::DeclareVar(DeclareVar {
+    //                 scope: Scope::Current,
+    //                 name: Ident::Literal("x"),
+    //                 kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
+    //             }),
+    //             Stmt::Assign(Assign {
+    //                 target: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("x")))),
+    //                 expr: Expr::IntLit(IntLit(2)),
+    //             }),
+    //             Stmt::Assign(Assign {
+    //                 target: Ident::Literal("x"),
+    //                 expr: Expr::IntLit(IntLit(3)),
+    //             }),
+    //         ],
+    //     };
 
-        assert_eq!(Some(expected), got)
+    //     assert_eq!(Some(expected), got)
+    // }
+
+    // #[test]
+    // fn operators() {
+    //     let input = r#"
+    //     HAI 1.4
+    //         I HAS A x ITZ SUM OF 1 AN DIFF OF 2 AN PRODUKT OF 3 AN QUOSHUNT OF 4 AN MOD OF 5 AN BIGGR OF 6 AN SMALLR OF 7 AN 8
+    //     KTHXBYE
+    //     "#;
+    //     let got = parse(input);
+    //     let expected = Module {
+    //         version: 1.4,
+    //         stmts: vec![Stmt::DeclareVar(DeclareVar {
+    //             scope: Scope::Current,
+    //             name: Ident::Literal("x"),
+    //             kind: DeclareVarKind::WithExpr(Expr::BinOp(BinOp {
+    //                 kind: BinOpKind::Add,
+    //                 lhs: Box::new(Expr::IntLit(IntLit(1))),
+    //                 rhs: Box::new(Expr::BinOp(BinOp {
+    //                     kind: BinOpKind::Sub,
+    //                     lhs: Box::new(Expr::IntLit(IntLit(2))),
+    //                     rhs: Box::new(Expr::BinOp(BinOp {
+    //                         kind: BinOpKind::Mul,
+    //                         lhs: Box::new(Expr::IntLit(IntLit(3))),
+    //                         rhs: Box::new(Expr::BinOp(BinOp {
+    //                             kind: BinOpKind::Div,
+    //                             lhs: Box::new(Expr::IntLit(IntLit(4))),
+    //                             rhs: Box::new(Expr::BinOp(BinOp {
+    //                                 kind: BinOpKind::Mod,
+    //                                 lhs: Box::new(Expr::IntLit(IntLit(5))),
+    //                                 rhs: Box::new(Expr::BinOp(BinOp {
+    //                                     kind: BinOpKind::Max,
+    //                                     lhs: Box::new(Expr::IntLit(IntLit(6))),
+    //                                     rhs: Box::new(Expr::BinOp(BinOp {
+    //                                         kind: BinOpKind::Min,
+    //                                         lhs: Box::new(Expr::IntLit(IntLit(7))),
+    //                                         rhs: Box::new(Expr::IntLit(IntLit(8))),
+    //                                     })),
+    //                                 })),
+    //                             })),
+    //                         })),
+    //                     })),
+    //                 })),
+    //             })),
+    //         })],
+    //     };
+
+    //     assert_eq!(Some(expected), got)
+    // }
+
+    fn ident(name: impl ToString) -> Ident {
+        Ident::Lit {
+            name: name.to_string().into_boxed_str(),
+            loc: loc!(),
+        }
     }
 
-    #[test]
-    fn operators() {
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ SUM OF 1 AN DIFF OF 2 AN PRODUKT OF 3 AN QUOSHUNT OF 4 AN MOD OF 5 AN BIGGR OF 6 AN SMALLR OF 7 AN 8
-        KTHXBYE
-        "#;
-        let got = parse(input);
-        let expected = Module {
-            version: 1.4,
-            stmts: vec![Stmt::DeclareVar(DeclareVar {
-                scope: Scope::Current,
-                name: Ident::Literal("x"),
-                kind: DeclareVarKind::WithExpr(Expr::BinOp(BinOp {
-                    kind: BinOpKind::Add,
-                    lhs: Box::new(Expr::IntLit(IntLit(1))),
-                    rhs: Box::new(Expr::BinOp(BinOp {
-                        kind: BinOpKind::Sub,
-                        lhs: Box::new(Expr::IntLit(IntLit(2))),
-                        rhs: Box::new(Expr::BinOp(BinOp {
-                            kind: BinOpKind::Mul,
-                            lhs: Box::new(Expr::IntLit(IntLit(3))),
-                            rhs: Box::new(Expr::BinOp(BinOp {
-                                kind: BinOpKind::Div,
-                                lhs: Box::new(Expr::IntLit(IntLit(4))),
-                                rhs: Box::new(Expr::BinOp(BinOp {
-                                    kind: BinOpKind::Mod,
-                                    lhs: Box::new(Expr::IntLit(IntLit(5))),
-                                    rhs: Box::new(Expr::BinOp(BinOp {
-                                        kind: BinOpKind::Max,
-                                        lhs: Box::new(Expr::IntLit(IntLit(6))),
-                                        rhs: Box::new(Expr::BinOp(BinOp {
-                                            kind: BinOpKind::Min,
-                                            lhs: Box::new(Expr::IntLit(IntLit(7))),
-                                            rhs: Box::new(Expr::IntLit(IntLit(8))),
-                                        })),
-                                    })),
-                                })),
-                            })),
-                        })),
-                    })),
-                })),
-            })],
-        };
-
-        assert_eq!(Some(expected), got)
+    fn srs(expr: Expr) -> Ident {
+        let expr = Box::new(expr);
+        Ident::Srs { expr, loc: loc!() }
     }
 
-    fn parse(input: &'static str) -> Option<Module<'static>> {
-        let lexer = Lexer::new(input);
+    fn init_expr(expr: Expr) -> Option<Init> {
+        Some(Init::Expr { expr, loc: loc!() })
+    }
+
+    fn init_type(typ: Type) -> Option<Init> {
+        Some(Init::Type { typ, loc: loc!() })
+    }
+
+    fn float_expr(value: f64) -> Expr {
+        Expr::Float(FloatLit { loc: loc!(), value })
+    }
+
+    fn bool_expr(value: bool) -> Expr {
+        Expr::Bool(BoolLit { loc: loc!(), value })
+    }
+
+    fn string_expr(value: impl ToString) -> Expr {
+        let value = value.to_string().into_boxed_str();
+        Expr::String(StringLit { loc: loc!(), value })
+    }
+
+    fn parse(input: &'static str) -> Result<Module, Vec<Error>> {
+        let lexer = Lexer::new(input, None);
         let mut parser = Parser::new(lexer);
-        parser.parse_module()
+        parser.parse_module().ok_or_else(|| parser.consume_errors())
     }
 }

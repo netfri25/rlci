@@ -39,15 +39,6 @@ pub struct NoobLit {
     pub loc: Loc,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Bool(BoolLit),
-    Int(IntLit),
-    Float(FloatLit),
-    String(StringLit),
-    Noob(NoobLit),
-}
-
 #[common_fields { loc: Loc }]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Ident {
@@ -96,7 +87,8 @@ pub struct Assign {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Declare {
     pub loc: Loc,
-    pub target: Ident,
+    pub scope: Ident,
+    pub name: Ident,
     pub init: Option<Init>,
 }
 
@@ -234,7 +226,11 @@ pub enum Stmt {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Cast(CastExpr),
-    Literal(Literal),
+    Bool(BoolLit),
+    Int(IntLit),
+    Float(FloatLit),
+    String(StringLit),
+    Noob(NoobLit),
     Ident(Ident),
     FuncCall(FuncCall),
     UnaryOp(UnaryOp),
