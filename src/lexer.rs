@@ -182,7 +182,7 @@ impl<'a> Lexer<'a> {
             ("WILE", Wile),
             ("WIN", Win),
             ("WON OF", WonOf),
-            ("WTF", Wtf),
+            ("WTF?", Wtf),
             ("YA RLY", YaRly),
             ("YARN", Yarn),
             ("YR", Yr),

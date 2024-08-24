@@ -132,9 +132,10 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    pub const SEPERATORS: &'static [Self] = &[Self::NewLine, Self::Comma];
+
     pub fn is_seperator(&self) -> bool {
-        use TokenKind::*;
-        matches!(self, NewLine | Comma)
+        Self::SEPERATORS.contains(self)
     }
 
     pub fn is_valid(&self) -> bool {
