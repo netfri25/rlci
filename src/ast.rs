@@ -6,7 +6,7 @@ use std::fmt;
 use crate::token::Loc;
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("HAI {}\n{}\nKTHXBYE", self.version, display_newline(&self.block))]
+#[display("HAI {}\n{}\nKTHXBYE", version, indent(display_newline(block)))]
 pub struct Module {
     pub loc: Loc,
     pub version: f64,
@@ -14,6 +14,10 @@ pub struct Module {
 }
 
 pub type Block = Vec<Stmt>;
+
+fn indent<T: ToString>(input: T) -> String {
+    "    ".to_string() + input.to_string().replace("\n", "\n    ").as_str()
+}
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {
     xs.iter().map(|stmt| stmt.to_string()).collect::<Vec<String>>().join("\n")
@@ -99,10 +103,10 @@ pub struct CastStmt {
 #[common_fields { loc: Loc, expr: Expr }]
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum Print {
-    #[display("VISIBLE")]
+    #[display("VISIBLE {expr}")]
     Visible,
 
-    #[display("INVISIBLE")]
+    #[display("INVISIBLE {expr}")]
     Invisible,
 }
 
@@ -122,7 +126,7 @@ pub struct Assign {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("{scope} HAS A {name}{}", self.init.as_ref().map(|init| format!(" {}", init)).unwrap_or_default())]
+#[display("{scope} HAS A {name}{}", init.as_ref().map(|init| format!(" {}", init)).unwrap_or_default())]
 pub struct Declare {
     pub loc: Loc,
     pub scope: Ident,
@@ -144,7 +148,7 @@ pub enum Init {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("O RLY?\nYA RLY\n{}\n{}\n{}OIC", display_newline(&self.then), display_newline(&self.else_if), self.otherwise.as_ref().map(|otherwise| format!("{}\n", otherwise)).unwrap_or_default())]
+#[display("O RLY?\n    YA RLY\n{}\n{}\n{}OIC", indent(display_newline(then)), indent(display_newline(else_if)), indent(otherwise.as_ref().map(|otherwise| format!("{}\n", otherwise)).unwrap_or_default()))]
 pub struct Cond {
     pub loc: Loc,
     pub then: Block,
@@ -153,7 +157,7 @@ pub struct Cond {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("MEBBE {}\n{}", self.cond, display_newline(&self.then))]
+#[display("MEBBE {}\n{}", cond, indent(display_newline(then)))]
 pub struct ElseIf {
     pub loc: Loc,
     pub cond: Expr,
@@ -161,14 +165,14 @@ pub struct ElseIf {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("NO WAI\n{}", display_newline(&self.block))]
+#[display("NO WAI\n{}", indent(display_newline(block)))]
 pub struct Else {
     pub loc: Loc,
     pub block: Block,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("WTF?\n{}\n{}OIC", indent(display_newline(cases)), indent(default.as_ref().map(|d| format!("{}\n", d)).unwrap_or_default()))]
 pub struct Switch {
     pub loc: Loc,
     pub cases: Vec<Case>, // must be at least one
@@ -176,7 +180,7 @@ pub struct Switch {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("OMG {expr}\n{}", indent(display_newline(block)))]
 pub struct Case {
     pub loc: Loc,
     pub expr: Expr,
@@ -184,27 +188,32 @@ pub struct Case {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("OMGWTF\n{}", indent(display_newline(block)))]
 pub struct DefaultCase {
     pub loc: Loc,
     pub block: Block,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("GTFO")]
 pub struct Break {
     pub loc: Loc,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("FOUNR YR {expr}")]
 pub struct Return {
     pub loc: Loc,
     pub expr: Expr,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display(
+    "IM IN YR {name}{}{}\n{}\nIM OUTTA YR {name}",
+    update.as_ref().map(|u| format!(" {}", u)).unwrap_or_default(),
+    guard.as_ref().map(|g| format!(" {}", g)).unwrap_or_default(),
+    indent(display_newline(block)),
+)]
 pub struct Loop {
     pub loc: Loc,
     pub name: Ident,
@@ -215,23 +224,46 @@ pub struct Loop {
 
 #[common_fields { loc: Loc, target: Ident }]
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
 pub enum LoopUpdate {
+    #[display("UPPING YR {target}")]
     Uppin,
+
+    #[display("NERFIN YR {target}")]
     Nerfin,
+
+    #[display("{scope} IZ {func} YR {target} MKAY")]
     UnaryFunction { scope: Ident, func: Ident },
 }
 
 #[common_fields { loc: Loc, cond: Expr }]
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
 pub enum LoopGuard {
+    #[display("TIL {cond}")]
     Til,
+
+    #[display("WILE {cond}")]
     Wile,
 }
 
+fn display_func_args<T: ToString>(args: &[T]) -> String {
+    let mut buf = String::new();
+
+    for (i, arg) in args.iter().enumerate() {
+        match i {
+            0 => {},
+            1 => buf.push_str(" YR "),
+            _ => buf.push_str(" AN YR ")
+        }
+
+        buf.push_str(&arg.to_string())
+    }
+
+    buf
+}
+
+
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("HOW IZ {scope} {name} {}\n{}\nIF U SAY SO", display_func_args(args), indent(display_newline(block)))]
 pub struct FuncDef {
     pub loc: Loc,
     pub scope: Ident,
@@ -241,23 +273,22 @@ pub struct FuncDef {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("{name}")]
 pub struct FuncArg {
     pub loc: Loc,
     pub name: Ident,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("O HAI IM {name}{}\n{}\nKTHX", inherit.as_ref().map(|x| format!(" IM LIEK {}", x)).unwrap_or_default(), indent(display_newline(block)))]
 pub struct ObjectDef {
     pub loc: Loc,
     pub name: Ident,
-    pub inherit: Ident,
+    pub inherit: Option<Ident>,
     pub block: Block,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
 pub enum Stmt {
     Cast(CastStmt),
     Print(Print),
@@ -275,7 +306,6 @@ pub enum Stmt {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
 pub enum Expr {
     Cast(CastExpr),
     Bool(BoolLit),
@@ -293,7 +323,7 @@ pub enum Expr {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("MAEK {expr} A {typ}")]
 pub struct CastExpr {
     pub loc: Loc,
     pub expr: Box<Expr>,
@@ -301,7 +331,7 @@ pub struct CastExpr {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("{scope} IZ {name} {} MKAY", display_func_args(params))]
 pub struct FuncCall {
     pub loc: Loc,
     pub scope: Ident,
@@ -310,21 +340,21 @@ pub struct FuncCall {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("{expr}")]
 pub struct Param {
     pub loc: Loc,
     pub expr: Expr,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("I DUZ {target}")]
 pub struct SystemCmd {
     pub loc: Loc,
     pub target: Ident, // TODO: ?????
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("{kind} {expr}")]
 pub struct UnaryOp {
     pub loc: Loc,
     pub kind: UnaryOpKind,
@@ -332,13 +362,13 @@ pub struct UnaryOp {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
 pub enum UnaryOpKind {
+    #[display("NOT")]
     Not,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("{kind} {lhs} AN {rhs}")]
 pub struct BinaryOp {
     pub loc: Loc,
     pub kind: BinaryOpKind,
@@ -347,24 +377,46 @@ pub struct BinaryOp {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
 pub enum BinaryOpKind {
+    #[display("SUM OF")]
     Add,
+
+    #[display("DIFF OF")]
     Sub,
+
+    #[display("PRODUKT OF")]
     Mul,
+
+    #[display("QUOSHUNT OF")]
     Div,
+
+    #[display("MOD OF")]
     Mod,
+
+    #[display("BIGGR OF")]
     Max,
+
+    #[display("SMALLR OF")]
     Min,
+
+    #[display("BOTH OF")]
     And,
+
+    #[display("EITHER OF")]
     Or,
+
+    #[display("WON OF")]
     Xor,
+
+    #[display("BOTH SAEM")]
     Eq,
+
+    #[display("DIFFRINT")]
     NotEq,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("{kind} {}", display_func_args(params))]
 pub struct NaryOp {
     pub loc: Loc,
     pub kind: NaryOpKind,
@@ -372,21 +424,25 @@ pub struct NaryOp {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
 pub enum NaryOpKind {
-    AllOf,
-    AnyOf,
+    #[display("ALL")]
+    All,
+
+    #[display("ANY")]
+    Any,
+
+    #[display("SMOOSH")]
     Smoosh,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display("IT")]
 pub struct Implicit {
     pub loc: Loc,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("todo")]
+#[display(", ")]
 pub struct Seperator {
     pub loc: Loc,
 }
