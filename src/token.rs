@@ -258,11 +258,12 @@ impl TokenKind {
     }
 }
 
+// WARN: `Loc == Loc` always returns true
 #[derive(Debug, Default, Clone, Eq, PartialOrd, Ord, thiserror::Error)]
 pub struct Loc {
     path: Option<Rc<Path>>,
-    row: u32, // 0 is used when you don't want to compare
-    col: u32, // 0 is used when you don't want to compare
+    row: u32,
+    col: u32,
 }
 
 impl Loc {
@@ -286,9 +287,8 @@ impl Loc {
 }
 
 impl PartialEq for Loc {
-    fn eq(&self, other: &Self) -> bool {
-        (self.row == other.row || self.row == 0 || other.row == 0)
-            && (self.col == other.col || self.col == 0 || other.col == 0)
+    fn eq(&self, _: &Self) -> bool {
+        true
     }
 }
 
