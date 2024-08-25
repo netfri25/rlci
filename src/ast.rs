@@ -245,14 +245,18 @@ pub enum LoopGuard {
     Wile,
 }
 
-fn display_func_args<T: ToString>(args: &[T]) -> String {
+fn display_args<T: ToString>(yr: bool, args: &[T]) -> String {
     let mut buf = String::new();
 
     for (i, arg) in args.iter().enumerate() {
-        match i {
-            0 => {},
-            1 => buf.push_str(" YR "),
-            _ => buf.push_str(" AN YR ")
+        if i == 0 {
+            if yr {
+                buf.push_str(" YR ");
+            }
+        } else if yr {
+            buf.push_str(" AN YR ")
+        } else {
+            buf.push_str(" AN ")
         }
 
         buf.push_str(&arg.to_string())
@@ -263,7 +267,7 @@ fn display_func_args<T: ToString>(args: &[T]) -> String {
 
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("HOW IZ {scope} {name} {}\n{}\nIF U SAY SO", display_func_args(args), indent(display_newline(block)))]
+#[display("HOW IZ {scope} {name} {}\n{}\nIF U SAY SO", display_args(true, args), indent(display_newline(block)))]
 pub struct FuncDef {
     pub loc: Loc,
     pub scope: Ident,
@@ -331,7 +335,7 @@ pub struct CastExpr {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("{scope} IZ {name} {} MKAY", display_func_args(params))]
+#[display("{scope} IZ {name} {} MKAY", display_args(true, params))]
 pub struct FuncCall {
     pub loc: Loc,
     pub scope: Ident,
@@ -416,7 +420,7 @@ pub enum BinaryOpKind {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("{kind} {}", display_func_args(params))]
+#[display("{kind} {}", display_args(false, params))]
 pub struct NaryOp {
     pub loc: Loc,
     pub kind: NaryOpKind,
