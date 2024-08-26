@@ -96,6 +96,7 @@ pub enum TokenKind {
     Maek,   // cast
     A,      // cast target specifior
     IsNowA, // in-place cast
+    ApostZ, // slot access
 
     Visible,   // print to stdout
     Invisible, // print to stderr
@@ -224,6 +225,7 @@ impl TokenKind {
             TokenKind::Maek => "MAEK",
             TokenKind::A => "A",
             TokenKind::IsNowA => "IS NOW A",
+            TokenKind::ApostZ => "'Z",
             TokenKind::Visible => "VISIBLE",
             TokenKind::Invisible => "INVISIBLE",
             TokenKind::Smoosh => "SMOOSH",

@@ -186,6 +186,7 @@ impl<'a> Lexer<'a> {
             ("YA RLY", YaRly),
             ("YARN", Yarn),
             ("YR", Yr),
+            ("'Z", ApostZ),
         ]);
 
         keywords.iter().rev().find_map(|(keyword, kind)| {

@@ -426,7 +426,14 @@ impl<'a> Parser<'a> {
             Ident::Lit { loc, name }
         };
 
-        Some(ident)
+        if self.accept(TokenKind::ApostZ).is_none() {
+            return Some(ident)
+        }
+
+        let parent = Box::new(ident);
+        let loc = parent.loc().clone();
+        let slot = self.parse_ident().map(Box::new)?;
+        Some(Ident::Access { loc, parent, slot })
     }
 
     fn parse_type(&mut self) -> Option<Type> {

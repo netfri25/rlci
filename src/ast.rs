@@ -65,6 +65,9 @@ pub enum Ident {
 
     #[display("{expr}")]
     Srs { expr: Box<Expr> },
+
+    #[display("{parent}'Z {slot}")]
+    Access { parent: Box<Ident>, slot: Box<Ident> },
 }
 
 #[common_fields { loc: Loc }]
