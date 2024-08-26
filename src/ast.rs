@@ -312,6 +312,26 @@ pub enum Stmt {
     Expr(Expr),
 }
 
+impl Stmt {
+    pub fn loc(&self) -> &Loc {
+        match self {
+            Stmt::Cast(stmt) => &stmt.loc,
+            Stmt::Print(stmt) => stmt.loc(),
+            Stmt::Input(stmt) => &stmt.loc,
+            Stmt::Assign(stmt) => &stmt.loc,
+            Stmt::Declare(stmt) => &stmt.loc,
+            Stmt::Cond(stmt) => &stmt.loc,
+            Stmt::Switch(stmt) => &stmt.loc,
+            Stmt::Break(stmt) => &stmt.loc,
+            Stmt::Return(stmt) => &stmt.loc,
+            Stmt::Loop(stmt) => &stmt.loc,
+            Stmt::FuncDef(stmt) => &stmt.loc,
+            Stmt::ObjectDef(stmt) => &stmt.loc,
+            Stmt::Expr(stmt) => stmt.loc(),
+        }
+    }
+}
+
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum Expr {
     Cast(CastExpr),
@@ -327,6 +347,26 @@ pub enum Expr {
     NaryOp(NaryOp),
     Implicit(Implicit),
     SystemCmd(SystemCmd),
+}
+
+impl Expr {
+    pub fn loc(&self) -> &Loc {
+        match self {
+            Expr::Cast(expr) => &expr.loc,
+            Expr::Bool(expr) => &expr.loc,
+            Expr::Int(expr) => &expr.loc,
+            Expr::Float(expr) => &expr.loc,
+            Expr::String(expr) => &expr.loc,
+            Expr::Noob(expr) => &expr.loc,
+            Expr::Ident(expr) => expr.loc(),
+            Expr::FuncCall(expr) => &expr.loc,
+            Expr::UnaryOp(expr) => &expr.loc,
+            Expr::BinaryOp(expr) => &expr.loc,
+            Expr::NaryOp(expr) => &expr.loc,
+            Expr::Implicit(expr) => &expr.loc,
+            Expr::SystemCmd(expr) => &expr.loc,
+        }
+    }
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -346,12 +386,7 @@ pub struct FuncCall {
     pub params: Vec<Param>,
 }
 
-#[derive(Debug, Display, Clone, PartialEq)]
-#[display("{expr}")]
-pub struct Param {
-    pub loc: Loc,
-    pub expr: Expr,
-}
+pub type Param = Expr;
 
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display("I DUZ {target}")]
