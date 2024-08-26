@@ -558,10 +558,17 @@ impl<'a> Parser<'a> {
             TokenKind::Smoosh => NaryOpKind::Smoosh,
             _ => return None,
         };
+        self.next_token();
 
-        // TODO: while loop, seperated by `AN [YR]`
+        let mut params = Vec::new();
+        params.push(self.parse_expr()?);
 
-        todo!("n ary op")
+        while let TokenKind::An = self.expect_many(&[TokenKind::An, TokenKind::Mkay])?.kind {
+            let expr = self.parse_expr()?;
+            params.push(expr);
+        }
+
+        Some(NaryOp { loc, kind, params })
     }
 
     fn loc(&mut self) -> Loc {
