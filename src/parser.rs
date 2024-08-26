@@ -19,98 +19,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn loc(&mut self) -> Loc {
-        self.peek_token(0).loc().clone()
-    }
-
-    fn next_token(&mut self) -> Token<'a> {
-        self.peek_queue
-            .pop_front()
-            .unwrap_or_else(|| self.lexer.next_token())
-    }
-
-    pub fn consume_errors(&mut self) -> Vec<Error> {
-        std::mem::take(&mut self.errors)
-    }
-
-    fn error(&mut self, kind: ErrorKind) {
-        let err = Error {
-            loc: self.loc(),
-            kind,
-        };
-        self.errors.push(err);
-    }
-
-    #[must_use]
-    fn peek_token(&mut self, off: usize) -> &Token {
-        if self.peek_queue.len() <= off {
-            let to_peek = off + 1 - self.peek_queue.len();
-            let tokens = (0..to_peek).map(|_| self.lexer.next_token());
-            self.peek_queue.extend(tokens);
-        }
-
-        &self.peek_queue[off]
-    }
-
-    #[must_use]
-    fn peek(&mut self, off: usize) -> TokenKind {
-        self.peek_token(off).kind()
-    }
-
-    #[must_use]
-    fn accept_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
-        if pred(self.peek(0)) {
-            let tkn = self
-                .peek_queue
-                .pop_front()
-                .expect("peek queue can't be empty");
-            Some(tkn)
-        } else {
-            None
-        }
-    }
-
-    fn accept(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
-        self.accept_pred(|kind| kind == expected_kind)
-    }
-
-    #[must_use]
-    fn expect_pred(
-        &mut self,
-        pred: impl FnOnce(TokenKind) -> bool,
-        err: impl FnOnce(TokenKind) -> ErrorKind,
-    ) -> Option<Token<'a>> {
-        if let Some(token) = self.accept_pred(pred) {
-            Some(token)
-        } else {
-            let kind = self.peek(0);
-            self.error(err(kind));
-            None
-        }
-    }
-
-    #[must_use]
-    fn expect(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
-        self.expect_pred(
-            |kind| kind == expected_kind,
-            |kind| ErrorKind::Expected {
-                expected: expected_kind,
-                got: kind,
-            },
-        )
-    }
-
-    #[must_use]
-    fn expect_many(&mut self, items: &[TokenKind]) -> Option<Token<'a>> {
-        self.expect_pred(
-            |kind| items.contains(&kind),
-            |got| ErrorKind::ExpectedOneOf {
-                expected: items.to_vec(),
-                got,
-            },
-        )
-    }
-
     pub fn parse_module(&mut self) -> Option<Module> {
         // remove newlines from the start
         self.accept(TokenKind::NewLine);
@@ -654,6 +562,98 @@ impl<'a> Parser<'a> {
         // TODO: while loop, seperated by `AN [YR]`
 
         todo!("n ary op")
+    }
+
+    fn loc(&mut self) -> Loc {
+        self.peek_token(0).loc().clone()
+    }
+
+    fn next_token(&mut self) -> Token<'a> {
+        self.peek_queue
+            .pop_front()
+            .unwrap_or_else(|| self.lexer.next_token())
+    }
+
+    pub fn consume_errors(&mut self) -> Vec<Error> {
+        std::mem::take(&mut self.errors)
+    }
+
+    fn error(&mut self, kind: ErrorKind) {
+        let err = Error {
+            loc: self.loc(),
+            kind,
+        };
+        self.errors.push(err);
+    }
+
+    #[must_use]
+    fn peek_token(&mut self, off: usize) -> &Token {
+        if self.peek_queue.len() <= off {
+            let to_peek = off + 1 - self.peek_queue.len();
+            let tokens = (0..to_peek).map(|_| self.lexer.next_token());
+            self.peek_queue.extend(tokens);
+        }
+
+        &self.peek_queue[off]
+    }
+
+    #[must_use]
+    fn peek(&mut self, off: usize) -> TokenKind {
+        self.peek_token(off).kind()
+    }
+
+    #[must_use]
+    fn accept_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
+        if pred(self.peek(0)) {
+            let tkn = self
+                .peek_queue
+                .pop_front()
+                .expect("peek queue can't be empty");
+            Some(tkn)
+        } else {
+            None
+        }
+    }
+
+    fn accept(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
+        self.accept_pred(|kind| kind == expected_kind)
+    }
+
+    #[must_use]
+    fn expect_pred(
+        &mut self,
+        pred: impl FnOnce(TokenKind) -> bool,
+        err: impl FnOnce(TokenKind) -> ErrorKind,
+    ) -> Option<Token<'a>> {
+        if let Some(token) = self.accept_pred(pred) {
+            Some(token)
+        } else {
+            let kind = self.peek(0);
+            self.error(err(kind));
+            None
+        }
+    }
+
+    #[must_use]
+    fn expect(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
+        self.expect_pred(
+            |kind| kind == expected_kind,
+            |kind| ErrorKind::Expected {
+                expected: expected_kind,
+                got: kind,
+            },
+        )
+    }
+
+    #[must_use]
+    fn expect_many(&mut self, items: &[TokenKind]) -> Option<Token<'a>> {
+        self.expect_pred(
+            |kind| items.contains(&kind),
+            |got| ErrorKind::ExpectedOneOf {
+                expected: items.to_vec(),
+                got,
+            },
+        )
     }
 }
 
