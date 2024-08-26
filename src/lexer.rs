@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 
 use crate::token::{Token, TokenKind, Loc};
 
+#[derive(Clone)]
 pub struct Lexer<'a> {
     input: &'a str,
     loc: Loc,

@@ -1,12 +1,10 @@
-use std::collections::VecDeque;
-
 use crate::ast::*;
 use crate::lexer::Lexer;
 use crate::token::{Loc, Token, TokenKind};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
-    peek_queue: VecDeque<Token<'a>>,
+    peek_token: Option<Token<'a>>,
     errors: Vec<Error>,
 }
 
@@ -14,7 +12,7 @@ impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
             lexer,
-            peek_queue: Default::default(),
+            peek_token: None,
             errors: Vec::new(),
         }
     }
@@ -28,7 +26,7 @@ impl<'a> Parser<'a> {
 
         let version = if !is_script {
             let Some(ver) = self.parse_float_lit() else {
-                let kind = self.peek(0);
+                let kind = self.peek();
                 self.error(ErrorKind::ExpectedVersion { got: kind });
                 return None;
             };
@@ -59,11 +57,7 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self) -> Option<Block> {
         let mut stmts = Vec::new();
 
-        while self.peek(0) != TokenKind::Eof {
-            let Some(stmt) = self.parse_stmt() else {
-                return Some(stmts);
-            };
-
+        while let Some(stmt) = self.parse_stmt() {
             stmts.push(stmt);
             self.parse_seperator()?;
         }
@@ -72,10 +66,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_stmt(&mut self) -> Option<Stmt> {
-        match self.peek(0) {
+        let peek = self.peek();
+        match peek {
             tkn if tkn.is_ident() => {
                 let ident = self.parse_ident()?;
-                match self.peek(0) {
+                match self.peek() {
                     TokenKind::IsNowA => self.parse_cast_stmt(ident).map(Stmt::Cast),
                     TokenKind::R => self.parse_assign_stmt(ident).map(Stmt::Assign),
                     TokenKind::HasA => self.parse_declare_stmt(ident).map(Stmt::Declare),
@@ -95,7 +90,7 @@ impl<'a> Parser<'a> {
             _ => {
                 let expr = self.parse_expr().map(Stmt::Expr);
                 if expr.is_none() {
-                    self.error(ErrorKind::InvalidStatement);
+                    self.error(ErrorKind::InvalidStatement { peek });
                 }
                 expr
             }
@@ -128,7 +123,7 @@ impl<'a> Parser<'a> {
 
     fn parse_declare_init(&mut self) -> Option<Init> {
         let loc = self.loc();
-        let init = match self.peek(0) {
+        let init = match self.peek() {
             TokenKind::Itz => {
                 self.next_token();
                 Init::Expr {
@@ -185,11 +180,11 @@ impl<'a> Parser<'a> {
         let then = self.parse_block()?;
 
         let mut else_if = Vec::new();
-        while self.peek(0) == TokenKind::Mebbe {
+        while self.peek() == TokenKind::Mebbe {
             else_if.push(self.parse_else_if()?);
         }
 
-        let otherwise = if self.peek(0) == TokenKind::NoWai {
+        let otherwise = if self.peek() == TokenKind::NoWai {
             Some(self.parse_else()?)
         } else {
             None
@@ -225,11 +220,11 @@ impl<'a> Parser<'a> {
         let loc = self.expect(TokenKind::Wtf)?.loc;
         self.parse_seperator()?;
         let mut cases = Vec::new();
-        while self.peek(0) == TokenKind::Omg {
+        while self.peek() == TokenKind::Omg {
             cases.push(self.parse_case()?);
         }
 
-        let default = if self.peek(0) == TokenKind::OmgWtf {
+        let default = if self.peek() == TokenKind::OmgWtf {
             Some(self.parse_default_case()?)
         } else {
             None
@@ -272,14 +267,14 @@ impl<'a> Parser<'a> {
     fn parse_loop_stmt(&mut self) -> Option<Loop> {
         let loc = self.expect(TokenKind::ImInYr)?.loc;
         let name = self.parse_ident()?;
-        let kind = self.peek(0);
+        let kind = self.peek();
         let update = if kind == TokenKind::Uppin || kind == TokenKind::Nerfin || kind.is_ident() {
             Some(self.parse_loop_update()?)
         } else {
             None
         };
 
-        let kind = self.peek(0);
+        let kind = self.peek();
         let guard = if matches!(kind, TokenKind::Wile | TokenKind::Til) {
             Some(self.parse_loop_guard()?)
         } else {
@@ -312,7 +307,7 @@ impl<'a> Parser<'a> {
 
     fn parse_loop_update(&mut self) -> Option<LoopUpdate> {
         let loc = self.loc();
-        let kind = self.peek(0);
+        let kind = self.peek();
         let op = match kind {
             TokenKind::Uppin => {
                 self.next_token();
@@ -361,7 +356,7 @@ impl<'a> Parser<'a> {
         let loc = self.expect(TokenKind::HowIz)?.loc;
         let scope = self.parse_ident()?;
         let name = self.parse_ident()?;
-        let args = if self.peek(0) == TokenKind::Yr {
+        let args = if self.peek() == TokenKind::Yr {
             self.parse_func_args()?
         } else {
             vec![]
@@ -385,7 +380,7 @@ impl<'a> Parser<'a> {
         let mut args = Vec::new();
         args.push(arg);
 
-        while self.peek(0) == TokenKind::AnYr {
+        while self.peek() == TokenKind::AnYr {
             let arg = self.parse_single_func_arg(false)?;
             args.push(arg);
         }
@@ -406,7 +401,63 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> Option<Expr> {
-        todo!()
+        let peek = self.peek();
+        match peek {
+            tkn if tkn.is_ident() => {
+                let ident = self.parse_ident()?;
+                if self.peek() == TokenKind::Iz {
+                    self.parse_func_call_expr(ident).map(Expr::FuncCall)
+                } else {
+                    Some(Expr::Ident(ident))
+                }
+            }
+
+            TokenKind::Maek => self.parse_cast_expr().map(Expr::Cast),
+            TokenKind::Noob => self.parse_noob_lit().map(Expr::Noob),
+            TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::Bool),
+            TokenKind::IntLit => self.parse_int_lit().map(Expr::Int),
+            TokenKind::FloatLit => self.parse_float_lit().map(Expr::Float),
+            TokenKind::StringLit => self.parse_string_lit().map(Expr::String),
+
+            tkn if tkn.is_unary_op() => self.parse_unary_op().map(Expr::UnaryOp),
+            tkn if tkn.is_bin_op() => self.parse_binary_op().map(Expr::BinaryOp),
+            tkn if tkn.is_n_ary_op() => self.parse_n_ary_op().map(Expr::NaryOp),
+
+            TokenKind::It => self.parse_implicit().map(Expr::Implicit),
+            TokenKind::IDuz => self.parse_system_cmd().map(Expr::SystemCmd),
+
+            _ => {
+                self.error(ErrorKind::InvalidExpr { peek });
+                None
+            }
+        }
+    }
+
+    fn parse_func_call_expr(&mut self, scope: Ident) -> Option<FuncCall> {
+        let loc = self.expect(TokenKind::Iz)?.loc;
+        let name = self.parse_ident()?;
+        let kind = self.expect_many(&[TokenKind::Yr, TokenKind::Mkay])?.kind;
+        if kind == TokenKind::Mkay {
+            return Some(FuncCall { loc, scope, name, params: vec![] })
+        }
+
+        let mut params = Vec::new();
+        params.push(self.parse_expr()?);
+
+        while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
+            let expr = self.parse_expr()?;
+            params.push(expr);
+        }
+
+        Some(FuncCall { loc, scope, name, params })
+    }
+
+    fn parse_cast_expr(&mut self) -> Option<CastExpr> {
+        let loc = self.expect(TokenKind::Maek)?.loc;
+        let expr = self.parse_expr().map(Box::new)?;
+        self.expect(TokenKind::A)?;
+        let typ = self.parse_type()?;
+        Some(CastExpr { loc, expr, typ })
     }
 
     fn parse_ident(&mut self) -> Option<Ident> {
@@ -437,24 +488,18 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type(&mut self) -> Option<Type> {
-        let loc = self.loc();
-        let typ = match self.peek(0) {
+        let Token { loc, kind, .. } = self.expect_many(TokenKind::TYPES)?;
+        let typ = match kind {
             TokenKind::Noob => Type::Noob { loc },
             TokenKind::Troof => Type::Troof { loc },
             TokenKind::Numbr => Type::Numbr { loc },
             TokenKind::Numbar => Type::Numbar { loc },
             TokenKind::Yarn => Type::Yarn { loc },
             TokenKind::Bukkit => Type::Bukkit { loc },
-            _ => return None, // TODO: report error
+            _ => unreachable!(),
         };
 
-        self.next_token();
         Some(typ)
-    }
-
-    fn parse_seperator(&mut self) -> Option<Seperator> {
-        let loc = self.expect_many(TokenKind::SEPERATORS)?.loc;
-        Some(Seperator { loc })
     }
 
     fn parse_int_lit(&mut self) -> Option<IntLit> {
@@ -486,15 +531,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_bool_lit(&mut self) -> Option<BoolLit> {
-        let loc = self.loc();
-        let kind = self.peek(0);
+        let Token { loc, kind, .. } = self.expect_many(&[TokenKind::Win, TokenKind::Fail])?;
         let value = match kind {
             TokenKind::Win => true,
             TokenKind::Fail => false,
-            _ => return None,
+            _ => unreachable!(),
         };
 
-        self.next_token();
         Some(BoolLit { loc, value })
     }
 
@@ -504,20 +547,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_string_lit(&mut self) -> Option<StringLit> {
-        let tkn = self.accept(TokenKind::StringLit)?;
-        let len = tkn.text().len() - 1;
-        let value = escape_string(&tkn.text()[1..len]);
-        Some(StringLit {
-            loc: tkn.loc,
-            value,
-        })
+        let Token { loc, text, .. } = self.accept(TokenKind::StringLit)?;
+        let len = text.len() - 1;
+        let value = text[1..len].to_string().into_boxed_str();
+        Some(StringLit { loc, value })
     }
 
     fn parse_unary_op(&mut self) -> Option<UnaryOp> {
         use TokenKind::*;
 
         let loc = self.loc();
-        let kind = match self.peek(0) {
+        let kind = match self.peek() {
             Not => UnaryOpKind::Not,
             _ => return None,
         };
@@ -530,7 +570,7 @@ impl<'a> Parser<'a> {
         use TokenKind::*;
 
         let loc = self.loc();
-        let kind = match self.peek(0) {
+        let kind = match self.peek() {
             SumOf => BinaryOpKind::Add,
             DiffOf => BinaryOpKind::Sub,
             ProduktOf => BinaryOpKind::Mul,
@@ -559,7 +599,7 @@ impl<'a> Parser<'a> {
 
     fn parse_n_ary_op(&mut self) -> Option<NaryOp> {
         let loc = self.loc();
-        let kind = match self.peek(0) {
+        let kind = match self.peek() {
             TokenKind::AllOf => NaryOpKind::All,
             TokenKind::AnyOf => NaryOpKind::Any,
             TokenKind::Smoosh => NaryOpKind::Smoosh,
@@ -578,13 +618,29 @@ impl<'a> Parser<'a> {
         Some(NaryOp { loc, kind, params })
     }
 
+    fn parse_implicit(&mut self) -> Option<Implicit> {
+        let loc = self.expect(TokenKind::It)?.loc;
+        Some(Implicit { loc })
+    }
+
+    fn parse_system_cmd(&mut self) -> Option<SystemCmd> {
+        let loc = self.expect(TokenKind::IDuz)?.loc;
+        let cmd = self.parse_expr().map(Box::new)?;
+        Some(SystemCmd { loc, cmd })
+    }
+
+    fn parse_seperator(&mut self) -> Option<Seperator> {
+        let loc = self.expect_many(TokenKind::SEPERATORS)?.loc;
+        Some(Seperator { loc })
+    }
+
     fn loc(&mut self) -> Loc {
-        self.peek_token(0).loc().clone()
+        self.peek_token().loc().clone()
     }
 
     fn next_token(&mut self) -> Token<'a> {
-        self.peek_queue
-            .pop_front()
+        self.peek_token
+            .take()
             .unwrap_or_else(|| self.lexer.next_token())
     }
 
@@ -601,28 +657,26 @@ impl<'a> Parser<'a> {
     }
 
     #[must_use]
-    fn peek_token(&mut self, off: usize) -> &Token {
-        if self.peek_queue.len() <= off {
-            let to_peek = off + 1 - self.peek_queue.len();
-            let tokens = (0..to_peek).map(|_| self.lexer.next_token());
-            self.peek_queue.extend(tokens);
+    fn peek_token(&mut self) -> &Token {
+        if self.peek_token.is_none() {
+            self.peek_token = Some(self.next_token())
         }
 
-        &self.peek_queue[off]
+        self.peek_token.as_ref().unwrap()
     }
 
     #[must_use]
-    fn peek(&mut self, off: usize) -> TokenKind {
-        self.peek_token(off).kind()
+    fn peek(&mut self) -> TokenKind {
+        self.peek_token().kind()
     }
 
     #[must_use]
     fn accept_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
-        if pred(self.peek(0)) {
+        if pred(self.peek()) {
             let tkn = self
-                .peek_queue
-                .pop_front()
-                .expect("peek queue can't be empty");
+                .peek_token
+                .take()
+                .expect("peek token can't be None");
             Some(tkn)
         } else {
             None
@@ -642,7 +696,7 @@ impl<'a> Parser<'a> {
         if let Some(token) = self.accept_pred(pred) {
             Some(token)
         } else {
-            let kind = self.peek(0);
+            let kind = self.peek();
             self.error(err(kind));
             None
         }
@@ -699,10 +753,10 @@ pub enum ErrorKind {
     },
 
     #[error("not a valid statement")]
-    InvalidStatement,
+    InvalidStatement { peek: TokenKind },
 
     #[error("not a valid expression")]
-    InvalidExpr,
+    InvalidExpr { peek: TokenKind },
 
     #[error("loop name doesn't match:\n\t{}: {}\n\t{}: {}", .begin.loc(), .begin, .end.loc(), .end)]
     DifferentLoopNames { begin: Ident, end: Ident },
@@ -940,6 +994,9 @@ mod tests {
 
     fn parse(input: &'static str) -> Result<Module, Vec<Error>> {
         let lexer = Lexer::new(input, None);
+        for tkn in lexer.clone() {
+            eprintln!("{: >15}  {: <10?}", tkn.loc, tkn.kind)
+        }
         let mut parser = Parser::new(lexer);
         parser.parse_module().ok_or_else(|| parser.consume_errors())
     }

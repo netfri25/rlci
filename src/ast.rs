@@ -389,10 +389,10 @@ pub struct FuncCall {
 pub type Param = Expr;
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("I DUZ {target}")]
+#[display("I DUZ {cmd}")]
 pub struct SystemCmd {
     pub loc: Loc,
-    pub target: Ident, // TODO: ?????
+    pub cmd: Box<Expr>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]

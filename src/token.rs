@@ -134,6 +134,14 @@ pub enum TokenKind {
 
 impl TokenKind {
     pub const SEPERATORS: &'static [Self] = &[Self::NewLine, Self::Comma];
+    pub const TYPES: &'static [Self] = &[
+        Self::Noob,
+        Self::Numbr,
+        Self::Numbar,
+        Self::Troof,
+        Self::Yarn,
+        Self::Bukkit,
+    ];
 
     pub fn is_seperator(&self) -> bool {
         Self::SEPERATORS.contains(self)
@@ -173,7 +181,7 @@ impl TokenKind {
         matches!(self, Not)
     }
 
-    pub fn is_infinite_op(&self) -> bool {
+    pub fn is_n_ary_op(&self) -> bool {
         use TokenKind::*;
         matches!(self, AllOf | AnyOf | Smoosh)
     }
