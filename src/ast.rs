@@ -231,6 +231,12 @@ pub struct Loop {
     pub block: Block,
 }
 
+impl Loop {
+    pub fn var(&self) -> Option<&Ident> {
+        self.update.as_ref().map(|u| u.target())
+    }
+}
+
 #[common_fields { loc: Loc, target: Ident }]
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum LoopUpdate {

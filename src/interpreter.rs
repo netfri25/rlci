@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::object::{Object, ObjectValue};
+use crate::object::{Funkshun, Object, ObjectValue};
 use crate::token::Loc;
 use crate::{ast::*, parser, scope};
 
@@ -33,19 +33,110 @@ impl Interpreter {
     pub fn eval_stmt(&mut self, stmt: &Stmt, scope: &SharedScope) -> Result<(), Error> {
         match stmt {
             Stmt::Cast(_) => todo!(),
-            Stmt::Print(_) => todo!(),
+            Stmt::Print(print) => self.eval_print(print, scope),
             Stmt::Input(_) => todo!(),
             Stmt::Assign(_) => todo!(),
             Stmt::Declare(_) => todo!(),
             Stmt::Cond(_) => todo!(),
             Stmt::Switch(_) => todo!(),
-            Stmt::Loop(_) => todo!(),
-            Stmt::FuncDef(_) => todo!(),
+            Stmt::Loop(looop) => self.eval_loop(looop, scope),
+            Stmt::FuncDef(func_def) => self.eval_func_def(func_def, scope),
             Stmt::ObjectDef(_) => todo!(),
             Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it_ref(obj)),
-            Stmt::Break(Break { loc }) => Err(Error::InvalidBreak(loc.clone())),
-            Stmt::Return(Return { loc, .. }) => Err(Error::InvalidReturn(loc.clone())),
+            Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
+            Stmt::Return(Return { loc, expr }) => Err(Error::Return(loc.clone(), self.eval_expr(expr, scope)?)),
         }
+    }
+
+    pub fn eval_print(&mut self, print: &Print, scope: &SharedScope) -> Result<(), Error> {
+        let loc = print.loc();
+        let value = self.eval_expr(print.expr(), scope)?;
+        let text = self.cast_string(loc.clone(), &value.get())?;
+        match print {
+            Print::Visible { .. } => println!("{}", text),
+            Print::Invisible { .. } => eprintln!("{}", text),
+        }
+
+        Ok(())
+    }
+
+    pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
+        let scope = &SharedScope::new(Some(scope.clone()));
+        if let Some(var) = looop.var() {
+            let name = self.eval_ident_name(var, scope)?;
+            let value = Object::new(ObjectValue::default_numbr());
+            scope
+                .define(name, value)
+                .map_err(|err| Error::Scope(var.loc().clone(), err))?;
+        };
+
+        loop {
+            if let Some(ref guard) = looop.guard {
+                let cond = self.eval_expr(guard.cond(), scope)?;
+                let troof = self.cast_bool(guard.cond().loc().clone(), &cond.get())?;
+                match guard {
+                    LoopGuard::Til { .. } if troof => break,
+                    LoopGuard::Wile { .. } if !troof => break,
+                    _ => {}
+                }
+            };
+
+            for stmt in &looop.block {
+                match self.eval_stmt(stmt, scope) {
+                    Err(Error::Break(..)) => break,
+                    Err(err) => return Err(err),
+                    _ => {}
+                }
+            }
+
+            if let Some(ref update) = looop.update {
+                let loc = update.loc();
+                let target = update.target();
+                let name = self.eval_ident_name(target, scope)?;
+                match update {
+                    LoopUpdate::Uppin { .. } => {
+                        let object = self.eval_ident(target, scope)?;
+                        let ObjectValue::Numbr(ref mut value) = *object.get_mut() else {
+                            return Err(Error::LoopVarNotNumbr(target.loc().clone(), name));
+                        };
+
+                        *value += 1;
+                    }
+                    LoopUpdate::Nerfin { .. } => {
+                        let object = self.eval_ident(target, scope)?;
+                        let ObjectValue::Numbr(ref mut value) = *object.get_mut() else {
+                            return Err(Error::LoopVarNotNumbr(target.loc().clone(), name));
+                        };
+
+                        *value -= 1;
+                    }
+                    LoopUpdate::UnaryFunction {
+                        scope: scope_ident,
+                        func,
+                        ..
+                    } => {
+                        let value = self.eval_func_call(loc, scope_ident, func, &[Expr::Ident(target.clone())], scope)?;
+                        scope.assign_ref(&name, value).map_err(|err| Error::Scope(loc.clone(), err))?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn eval_func_def(&mut self, func_def: &FuncDef, scope: &SharedScope) -> Result<(), Error> {
+        let scope = &self.eval_scope(&func_def.scope, scope)?;
+        let name = self.eval_ident_name(&func_def.name, scope)?;
+        let funkshun = Funkshun {
+            scope: scope.clone(),
+            args: func_def.args.clone(),
+            block: func_def.block.clone(),
+        };
+        let object = Object::new(ObjectValue::Funkshun(funkshun));
+        scope
+            .define(name, object)
+            .map_err(|err| Error::Scope(func_def.loc.clone(), err))
     }
 
     pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
@@ -59,7 +150,12 @@ impl Interpreter {
             }
             Expr::Noob(_) => Ok(Object::new(ObjectValue::Noob)),
             Expr::Ident(ident) => self.eval_ident(ident, scope),
-            Expr::FuncCall(func_call) => self.eval_func_call(func_call, scope),
+            Expr::FuncCall(FuncCall {
+                loc,
+                scope: scope_ident,
+                name,
+                params,
+            }) => self.eval_func_call(loc, scope_ident, name, params, scope),
             Expr::UnaryOp(_) => todo!(),
             Expr::BinaryOp(_) => todo!(),
             Expr::NaryOp(_) => todo!(),
@@ -117,24 +213,28 @@ impl Interpreter {
 
     pub fn eval_func_call(
         &mut self,
-        func_call: &FuncCall,
+        loc: &Loc,
+        scope_ident: &Ident,
+        name: &Ident,
+        params: &[Expr],
         scope: &SharedScope,
     ) -> Result<Object, Error> {
-        let scope = self.eval_scope(&func_call.scope, scope)?;
-        let func_name = self.eval_ident_name(&func_call.name, &scope)?;
-        let func_object = self.eval_ident(&func_call.name, &scope)?;
+        let scope = self.eval_scope(scope_ident, scope)?;
+        let func_name = self.eval_ident_name(name, &scope)?;
+        let func_object = self.eval_ident(name, &scope)?;
         let ObjectValue::Funkshun(ref func) = *func_object.get() else {
-            return Err(Error::NotCallable(func_call.name.loc().clone(), func_name));
+            return Err(Error::NotCallable(name.loc().clone(), func_name));
         };
 
+        // TODO: set the parameters, and report invalid amount of args
         let scope = &func.scope;
         for stmt in &func.block {
-            match stmt {
-                Stmt::Break(_) => return Ok(Object::new(ObjectValue::Noob)),
-                Stmt::Return(Return { expr, .. }) => return self.eval_expr(expr, scope),
+            match self.eval_stmt(stmt, scope) {
+                Err(Error::Break(..)) => return Ok(Object::new(ObjectValue::Noob)),
+                Err(Error::Return(_, value)) => return Ok(value),
+                Err(err) => return Err(err),
                 _ => {}
             }
-            self.eval_stmt(stmt, scope)?;
         }
 
         Ok(scope.get_it())
@@ -149,6 +249,20 @@ impl Interpreter {
             ObjectValue::Yarn(x) => x.clone(),
             ObjectValue::Bukkit(_) => return Err(Error::CantCastBukkitToYarn(loc)),
             ObjectValue::Funkshun(_) => return Err(Error::CantCastFunkshunToYarn(loc)),
+        };
+
+        Ok(res)
+    }
+
+    pub fn cast_bool(&mut self, loc: Loc, value: &ObjectValue) -> Result<bool, Error> {
+        let res = match value {
+            ObjectValue::Noob => false,
+            &ObjectValue::Troof(value) => value,
+            &ObjectValue::Numbr(value) => value == 0,
+            &ObjectValue::Numbar(value) => value == 0.,
+            ObjectValue::Yarn(value) => !value.is_empty(),
+            ObjectValue::Bukkit(_) => return Err(Error::CantCastBukkitToTroof(loc)),
+            ObjectValue::Funkshun(_) => return Err(Error::CantCastFunkshunToTroof(loc)),
         };
 
         Ok(res)
@@ -170,10 +284,10 @@ pub enum Error {
     Scope(Loc, scope::Error),
 
     #[error("{0}: can't break from here")]
-    InvalidBreak(Loc),
+    Break(Loc),
 
     #[error("{0}: can't return from here")]
-    InvalidReturn(Loc),
+    Return(Loc, Object),
 
     #[error("{0}: can't cast BUKKIT to a YARN")]
     CantCastBukkitToYarn(Loc),
@@ -181,11 +295,20 @@ pub enum Error {
     #[error("{0}: can't cast FUNKSHUN to a YARN")]
     CantCastFunkshunToYarn(Loc),
 
+    #[error("{0}: can't cast BUKKIT to a TROOF")]
+    CantCastBukkitToTroof(Loc),
+
+    #[error("{0}: can't cast FUNKSHUN to a TROOF")]
+    CantCastFunkshunToTroof(Loc),
+
     #[error("{0}: variable `{1}` is not of type BUKKIT")]
     NotABukkit(Loc, String),
 
     #[error("{0}: variable `{1} is not callable")]
     NotCallable(Loc, String),
+
+    #[error("{0}: loop variable `{1}` is not a NUMBR")]
+    LoopVarNotNumbr(Loc, String),
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {

@@ -38,6 +38,30 @@ pub enum ObjectValue {
 }
 
 impl ObjectValue {
+    pub fn default_noob() -> Self {
+        Self::Noob
+    }
+
+    pub fn default_troof() -> Self {
+        Self::Troof(false)
+    }
+
+    pub fn default_numbr() -> Self {
+        Self::Numbr(0)
+    }
+
+    pub fn default_numbar() -> Self {
+        Self::Numbar(0.)
+    }
+
+    pub fn default_yarn() -> Self {
+        Self::Yarn("".into())
+    }
+
+    pub fn default_bukkit(scope: SharedScope) -> Self {
+        Self::Bukkit(Bukkit::new(scope))
+    }
+
     pub fn as_noob(&self) -> Option<()> {
         self.is_noob().then_some(())
     }
