@@ -1,7 +1,7 @@
-use std::path::Path;
 use std::collections::BTreeMap;
+use std::path::Path;
 
-use crate::token::{Token, TokenKind, Loc};
+use crate::token::{Loc, Token, TokenKind};
 
 #[derive(Clone)]
 pub struct Lexer<'a> {
@@ -29,7 +29,7 @@ impl<'a> Lexer<'a> {
 
         // also skips whitespace
         if !self.skip_comments() {
-            return self.new_token(0, TokenKind::Invalid)
+            return self.new_token(0, TokenKind::Invalid);
         }
 
         let methods = [
@@ -41,7 +41,9 @@ impl<'a> Lexer<'a> {
             Self::lex_int_lit,
         ];
 
-        let Some(token@Token { kind, text, .. }) = methods.into_iter().find_map(|method| method(self)) else {
+        let Some(token @ Token { kind, text, .. }) =
+            methods.into_iter().find_map(|method| method(self))
+        else {
             return self.new_token(0, TokenKind::Invalid);
         };
         self.consume(text.len());
@@ -372,10 +374,7 @@ mod tests {
         let tkns = lex(input);
         assert_eq!(
             tkns,
-            vec![
-                token(TokenKind::Win, "WIN"),
-                token(TokenKind::Fail, "FAIL"),
-            ]
+            vec![token(TokenKind::Win, "WIN"), token(TokenKind::Fail, "FAIL"),]
         )
     }
 

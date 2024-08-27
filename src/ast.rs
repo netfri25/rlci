@@ -1,5 +1,5 @@
-use diff_enum::common_fields;
 use derive_more::Display;
+use diff_enum::common_fields;
 
 use std::fmt;
 
@@ -20,7 +20,10 @@ fn indent<T: ToString>(input: T) -> String {
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {
-    xs.iter().map(|stmt| stmt.to_string()).collect::<Vec<String>>().join("\n")
+    xs.iter()
+        .map(|stmt| stmt.to_string())
+        .collect::<Vec<String>>()
+        .join("\n")
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -67,7 +70,10 @@ pub enum Ident {
     Srs { expr: Box<Expr> },
 
     #[display("{parent}'Z {slot}")]
-    Access { parent: Box<Ident>, slot: Box<Ident> },
+    Access {
+        parent: Box<Ident>,
+        slot: Box<Ident>,
+    },
 }
 
 #[common_fields { loc: Loc }]
@@ -268,9 +274,12 @@ fn display_args<T: ToString>(yr: bool, args: &[T]) -> String {
     buf
 }
 
-
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("HOW IZ {scope} {name} {}\n{}\nIF U SAY SO", display_args(true, args), indent(display_newline(block)))]
+#[display(
+    "HOW IZ {scope} {name} {}\n{}\nIF U SAY SO",
+    display_args(true, args),
+    indent(display_newline(block))
+)]
 pub struct FuncDef {
     pub loc: Loc,
     pub scope: Ident,

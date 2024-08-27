@@ -81,7 +81,7 @@ impl Scope {
     pub fn assign_ref(&mut self, name: &str, value: Object) -> Result<(), Error> {
         if let Some(obj) = self.vars.get_mut(name) {
             *obj = value;
-            return Ok(())
+            return Ok(());
         }
 
         self.parent

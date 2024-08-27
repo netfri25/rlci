@@ -156,7 +156,7 @@ pub struct Bukkit {
 impl Bukkit {
     pub fn new(parent: SharedScope) -> Self {
         Self {
-            inner_scope: SharedScope::new(Some(parent))
+            inner_scope: SharedScope::new(Some(parent)),
         }
     }
 

@@ -85,7 +85,10 @@ impl<'a> Parser<'a> {
                     TokenKind::IsNowA => self.parse_cast_stmt(ident).map(Stmt::Cast),
                     TokenKind::R => self.parse_assign_stmt(ident).map(Stmt::Assign),
                     TokenKind::HasA => self.parse_declare_stmt(ident).map(Stmt::Declare),
-                    TokenKind::Iz => self.parse_func_call_expr(ident).map(Expr::FuncCall).map(Stmt::Expr),
+                    TokenKind::Iz => self
+                        .parse_func_call_expr(ident)
+                        .map(Expr::FuncCall)
+                        .map(Stmt::Expr),
                     _ => Some(Stmt::Expr(Expr::Ident(ident))),
                 }
             }
@@ -425,7 +428,12 @@ impl<'a> Parser<'a> {
         self.parse_seperator()?;
         let block = self.parse_block()?;
         self.expect(TokenKind::KThx)?;
-        Some(ObjectDef { loc, name, inherit, block })
+        Some(ObjectDef {
+            loc,
+            name,
+            inherit,
+            block,
+        })
     }
 
     fn parse_expr(&mut self) -> Option<Expr> {
@@ -466,7 +474,12 @@ impl<'a> Parser<'a> {
         let name = self.parse_ident()?;
         let kind = self.expect_many(&[TokenKind::Yr, TokenKind::Mkay])?.kind;
         if kind == TokenKind::Mkay {
-            return Some(FuncCall { loc, scope, name, params: vec![] })
+            return Some(FuncCall {
+                loc,
+                scope,
+                name,
+                params: vec![],
+            });
         }
 
         let mut params = Vec::new();
@@ -477,7 +490,12 @@ impl<'a> Parser<'a> {
             params.push(expr);
         }
 
-        Some(FuncCall { loc, scope, name, params })
+        Some(FuncCall {
+            loc,
+            scope,
+            name,
+            params,
+        })
     }
 
     fn parse_cast_expr(&mut self) -> Option<CastExpr> {
@@ -701,10 +719,7 @@ impl<'a> Parser<'a> {
     #[must_use]
     fn accept_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
         if pred(self.peek()) {
-            let tkn = self
-                .peek_token
-                .take()
-                .expect("peek token can't be None");
+            let tkn = self.peek_token.take().expect("peek token can't be None");
             Some(tkn)
         } else {
             None

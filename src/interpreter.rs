@@ -124,7 +124,7 @@ impl Interpreter {
         let func_name = self.eval_ident_name(&func_call.name, &scope)?;
         let func_object = self.eval_ident(&func_call.name, &scope)?;
         let ObjectValue::Funkshun(ref func) = *func_object.get() else {
-            return Err(Error::NotCallable(func_call.name.loc().clone(), func_name))
+            return Err(Error::NotCallable(func_call.name.loc().clone(), func_name));
         };
 
         let scope = &func.scope;
@@ -132,7 +132,7 @@ impl Interpreter {
             match stmt {
                 Stmt::Break(_) => return Ok(Object::new(ObjectValue::Noob)),
                 Stmt::Return(Return { expr, .. }) => return self.eval_expr(expr, scope),
-                _ => {},
+                _ => {}
             }
             self.eval_stmt(stmt, scope)?;
         }
@@ -185,7 +185,7 @@ pub enum Error {
     NotABukkit(Loc, String),
 
     #[error("{0}: variable `{1} is not callable")]
-    NotCallable(Loc, String)
+    NotCallable(Loc, String),
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {
