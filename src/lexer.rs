@@ -41,12 +41,12 @@ impl<'a> Lexer<'a> {
             Self::lex_int_lit,
         ];
 
-        let Some(token) = methods.into_iter().find_map(|method| method(self)) else {
+        let Some(token@Token { kind, text, .. }) = methods.into_iter().find_map(|method| method(self)) else {
             return self.new_token(0, TokenKind::Invalid);
         };
-        self.consume(token.text().len());
+        self.consume(text.len());
 
-        let is_newline = token.kind() == TokenKind::NewLine;
+        let is_newline = kind == TokenKind::NewLine;
         if self.last_was_newline && is_newline {
             self.next_token()
         } else {
@@ -278,7 +278,7 @@ impl<'a> Iterator for Lexer<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let tkn = self.next_token();
-        if [TokenKind::Invalid, TokenKind::Eof].contains(&tkn.kind()) {
+        if [TokenKind::Invalid, TokenKind::Eof].contains(&tkn.kind) {
             None
         } else {
             Some(tkn)
@@ -399,10 +399,10 @@ mod tests {
     }
 
     fn token(kind: TokenKind, text: &'static str) -> Token<'static> {
-        Token::new(kind, text, Loc::default())
+        Token::new(kind, text, Loc::new(""))
     }
 
     fn lex(input: &'static str) -> Vec<Token<'static>> {
-        Lexer::new(input, None).collect()
+        Lexer::new(input, "").collect()
     }
 }

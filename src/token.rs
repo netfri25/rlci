@@ -2,7 +2,6 @@ use std::ops::Deref;
 use std::path::Path;
 use std::rc::Rc;
 
-// TODO: store the position in the file for better error reporting
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'a> {
     pub kind: TokenKind,
@@ -13,18 +12,6 @@ pub struct Token<'a> {
 impl<'a> Token<'a> {
     pub fn new(kind: TokenKind, text: &'a str, loc: Loc) -> Self {
         Self { kind, text, loc }
-    }
-
-    pub fn kind(&self) -> TokenKind {
-        self.kind
-    }
-
-    pub fn text(&self) -> &'a str {
-        self.text
-    }
-
-    pub fn loc(&self) -> &Loc {
-        &self.loc
     }
 }
 

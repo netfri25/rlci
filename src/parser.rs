@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::lexer::Lexer;
 use crate::token::{Loc, Token, TokenKind};
 
-pub fn parse(input: &str, path: &impl AsRef<Path>) -> Result<Module, Vec<Error>> {
+pub fn parse(input: &str, path: &(impl AsRef<Path> + ?Sized)) -> Result<Module, Vec<Error>> {
     let lexer = Lexer::new(input, path);
     let mut parser = Parser::new(lexer);
     let module = parser.parse_module();
@@ -531,7 +531,7 @@ impl<'a> Parser<'a> {
 
     fn parse_int_lit(&mut self) -> Option<IntLit> {
         let tkn = self.accept(TokenKind::IntLit)?;
-        match tkn.text().parse() {
+        match tkn.text.parse() {
             Ok(value) => Some(IntLit {
                 loc: tkn.loc,
                 value,
@@ -545,7 +545,7 @@ impl<'a> Parser<'a> {
 
     fn parse_float_lit(&mut self) -> Option<FloatLit> {
         let tkn = self.accept(TokenKind::FloatLit)?;
-        match tkn.text().parse() {
+        match tkn.text.parse() {
             Ok(value) => Some(FloatLit {
                 loc: tkn.loc,
                 value,
@@ -663,7 +663,7 @@ impl<'a> Parser<'a> {
     }
 
     fn loc(&mut self) -> Loc {
-        self.peek_token().loc().clone()
+        self.peek_token().loc.clone()
     }
 
     fn next_token(&mut self) -> Token<'a> {
@@ -695,7 +695,7 @@ impl<'a> Parser<'a> {
 
     #[must_use]
     fn peek(&mut self) -> TokenKind {
-        self.peek_token().kind()
+        self.peek_token().kind
     }
 
     #[must_use]
@@ -1021,7 +1021,7 @@ mod tests {
     }
 
     fn parse(input: &'static str) -> Result<Module, Vec<Error>> {
-        let lexer = Lexer::new(input, None);
+        let lexer = Lexer::new(input, "");
         for tkn in lexer.clone() {
             eprintln!("{: >15}  {: <10?}", tkn.loc, tkn.kind)
         }
