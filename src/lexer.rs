@@ -11,7 +11,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new<'b>(input: &'a str, path: impl Into<Option<&'b Path>>) -> Self {
+    pub fn new(input: &'a str, path: &(impl AsRef<Path> + ?Sized)) -> Self {
         let loc = Loc::new(path);
         Self {
             input,

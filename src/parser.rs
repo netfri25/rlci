@@ -1,6 +1,15 @@
+use std::path::Path;
+
 use crate::ast::*;
 use crate::lexer::Lexer;
 use crate::token::{Loc, Token, TokenKind};
+
+pub fn parse(input: &str, path: &impl AsRef<Path>) -> Result<Module, Vec<Error>> {
+    let lexer = Lexer::new(input, path);
+    let mut parser = Parser::new(lexer);
+    let module = parser.parse_module();
+    module.ok_or_else(|| parser.consume_errors())
+}
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -57,7 +66,8 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self) -> Option<Block> {
         let mut stmts = Vec::new();
 
-        while let Some(stmt) = self.parse_stmt() {
+        while !self.peek().is_block_term() {
+            let stmt = self.parse_stmt()?;
             stmts.push(stmt);
             self.parse_seperator()?;
         }
@@ -74,6 +84,7 @@ impl<'a> Parser<'a> {
                     TokenKind::IsNowA => self.parse_cast_stmt(ident).map(Stmt::Cast),
                     TokenKind::R => self.parse_assign_stmt(ident).map(Stmt::Assign),
                     TokenKind::HasA => self.parse_declare_stmt(ident).map(Stmt::Declare),
+                    TokenKind::Iz => self.parse_func_call_expr(ident).map(Expr::FuncCall).map(Stmt::Expr),
                     _ => Some(Stmt::Expr(Expr::Ident(ident))),
                 }
             }
@@ -86,6 +97,7 @@ impl<'a> Parser<'a> {
             TokenKind::FoundYr => self.parse_return_stmt().map(Stmt::Return),
             TokenKind::ImInYr => self.parse_loop_stmt().map(Stmt::Loop),
             TokenKind::HowIz => self.parse_func_def_stmt().map(Stmt::FuncDef),
+            TokenKind::OHaiIm => self.parse_object_def_stmt().map(Stmt::ObjectDef),
 
             _ => {
                 let expr = self.parse_expr().map(Stmt::Expr);
@@ -177,6 +189,7 @@ impl<'a> Parser<'a> {
         let loc = self.expect(TokenKind::ORly)?.loc;
         self.parse_seperator()?;
         self.expect(TokenKind::YaRly)?;
+        self.parse_seperator()?;
         let then = self.parse_block()?;
 
         let mut else_if = Vec::new();
@@ -190,7 +203,6 @@ impl<'a> Parser<'a> {
             None
         };
 
-        self.parse_seperator()?;
         self.expect(TokenKind::Oic)?;
 
         Some(Cond {
@@ -400,6 +412,21 @@ impl<'a> Parser<'a> {
         Some(FuncArg { loc, name })
     }
 
+    fn parse_object_def_stmt(&mut self) -> Option<ObjectDef> {
+        let loc = self.expect(TokenKind::OHaiIm)?.loc;
+        let name = self.parse_ident()?;
+        let inherit = if self.accept(TokenKind::ImLiek).is_some() {
+            Some(self.parse_ident()?)
+        } else {
+            None
+        };
+
+        self.parse_seperator()?;
+        let block = self.parse_block()?;
+        self.expect(TokenKind::KThx)?;
+        Some(ObjectDef { loc, name, inherit, block })
+    }
+
     fn parse_expr(&mut self) -> Option<Expr> {
         let peek = self.peek();
         match peek {
@@ -585,6 +612,7 @@ impl<'a> Parser<'a> {
             Diffrint => BinaryOpKind::NotEq,
             _ => return None,
         };
+        self.next_token();
 
         let lhs = self.parse_expr().map(Box::new)?;
         self.accept(TokenKind::An)?;
@@ -809,7 +837,7 @@ mod tests {
 
     macro_rules! loc {
         () => {
-            Loc::default()
+            Loc::new("")
         };
     }
 

@@ -143,6 +143,24 @@ impl TokenKind {
         Self::Bukkit,
     ];
 
+    pub const BLOCK_TERM: &'static [Self] = &[
+        Self::Eof,
+        Self::KThxBye,
+        Self::Oic,
+        Self::YaRly,
+        Self::NoWai,
+        Self::Mebbe,
+        Self::Omg,
+        Self::OmgWtf,
+        Self::ImOuttaYr,
+        Self::IfUSaySo,
+        Self::KThx,
+    ];
+
+    pub fn is_block_term(&self) -> bool {
+        Self::BLOCK_TERM.contains(self)
+    }
+
     pub fn is_seperator(&self) -> bool {
         Self::SEPERATORS.contains(self)
     }
@@ -269,16 +287,16 @@ impl TokenKind {
 }
 
 // WARN: `Loc == Loc` always returns true
-#[derive(Debug, Default, Clone, Eq, PartialOrd, Ord, thiserror::Error)]
+#[derive(Debug, Clone, Eq, PartialOrd, Ord, thiserror::Error)]
 pub struct Loc {
-    path: Option<Rc<Path>>,
+    path: Rc<Path>,
     row: u32,
     col: u32,
 }
 
 impl Loc {
-    pub fn new<'a>(path: impl Into<Option<&'a Path>>) -> Self {
-        let path = path.into().map(|p| p.into());
+    pub fn new(path: &(impl AsRef<Path> + ?Sized)) -> Self {
+        let path = path.as_ref().into();
         Self {
             path,
             row: 1,
@@ -304,11 +322,7 @@ impl PartialEq for Loc {
 
 impl std::fmt::Display for Loc {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let path = self
-            .path
-            .as_ref()
-            .map(|p| p.to_string_lossy())
-            .unwrap_or_else(|| "<unknown>".into());
+        let path = self.path.to_string_lossy();
         write!(f, "{}:{}:{}", path, self.row, self.col)
     }
 }

@@ -63,7 +63,7 @@ pub enum Ident {
     #[display("{name}")]
     Lit { name: Box<str> },
 
-    #[display("{expr}")]
+    #[display("SRS {expr}")]
     Srs { expr: Box<Expr> },
 
     #[display("{parent}'Z {slot}")]
@@ -151,7 +151,7 @@ pub enum Init {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("O RLY?\n    YA RLY\n{}\n{}\n{}OIC", indent(display_newline(then)), indent(display_newline(else_if)), indent(otherwise.as_ref().map(|otherwise| format!("{}\n", otherwise)).unwrap_or_default()))]
+#[display("O RLY?\n    YA RLY\n{}\n{}\n{}OIC", indent(indent(display_newline(then))), indent(display_newline(else_if)), indent(otherwise.as_ref().map(|otherwise| format!("{}\n", otherwise)).unwrap_or_default()))]
 pub struct Cond {
     pub loc: Loc,
     pub then: Block,
