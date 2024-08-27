@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use interpreter::Interpreter;
 use lexer::Lexer;
 
 use std::borrow::Cow;
@@ -6,8 +7,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod ast;
+mod interpreter;
 mod lexer;
+mod object;
 mod parser;
+mod scope;
 mod token;
 
 #[derive(Parser)]
@@ -29,39 +33,39 @@ pub enum Action {
 fn main() {
     let ops = Options::parse();
     let path = expand_home(&ops.path);
-    let input = fs::read_to_string(&path).unwrap_or_else(|err| {
-        eprintln!("[ERROR] Unable to read `{}`: {}", path.display(), err);
-        std::process::exit(1);
-    });
 
     match ops.action {
-        Action::Lex => lex(&input, &path),
-        Action::Parse => {
-            let module = parse(&input, &path);
-            eprintln!("{:#?}", module);
-        }
-        Action::Run => run(&input, &path)
+        Action::Lex => lex(&path),
+        Action::Parse => parse(&path),
+        Action::Run => drop(Interpreter.eval_file(&path)),
     }
 }
 
-fn lex(input: &str, path: &Path) {
-    let lexer = Lexer::new(input, path);
+fn read_file(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_else(|err| {
+        eprintln!("[ERROR] Unable to read `{}`: {}", path.display(), err);
+        std::process::exit(1);
+    })
+}
+
+fn lex(path: &Path) {
+    let input = read_file(path);
+    let lexer = Lexer::new(&input, path);
     for token in lexer {
         println!("{}: {}, \"{}\"", token.loc, token.kind.name(), token.text)
     }
 }
 
-fn parse(input: &str, path: &Path) -> ast::Module {
-    parser::parse(input, path).unwrap_or_else(|errs| {
+fn parse(path: &Path) {
+    let input = read_file(path);
+    let module = parser::parse(&input, path).unwrap_or_else(|errs| {
         for err in errs {
             eprintln!("[ERROR] {}", err)
         }
         std::process::exit(1);
-    })
-}
+    });
 
-fn run(input: &str, path: &Path) {
-    todo!()
+    eprintln!("{:#?}", module);
 }
 
 fn expand_home(path: &Path) -> Cow<Path> {
