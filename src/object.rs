@@ -1,97 +1,188 @@
-use std::fmt;
+use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Default, Clone, PartialEq)]
-pub enum Object {
+use crate::ast::{Block, FuncArg};
+use crate::scope::SharedScope;
+
+#[derive(Debug, Clone, Default)]
+pub struct Object(Arc<RwLock<ObjectValue>>);
+
+impl Object {
+    pub fn new(value: ObjectValue) -> Self {
+        Self(Arc::new(RwLock::new(value)))
+    }
+
+    pub fn set(&self, value: ObjectValue) {
+        *self.0.write().unwrap() = value
+    }
+
+    pub fn get(&self) -> impl Deref<Target = ObjectValue> + '_ {
+        self.0.read().unwrap()
+    }
+
+    pub fn get_mut(&self) -> impl DerefMut<Target = ObjectValue> + '_ {
+        self.0.write().unwrap()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum ObjectValue {
     #[default]
     Noob,
     Troof(bool),
     Numbr(i64),
     Numbar(f64),
     Yarn(String),
+    Bukkit(Bukkit),
+    Funkshun(Funkshun),
 }
 
-impl Object {
-    pub fn as_float(&self) -> Option<f64> {
-        match *self {
-            Object::Troof(value) => Some(value as i64 as f64),
-            Object::Numbr(value) => Some(value as f64),
-            Object::Numbar(value) => Some(value),
-            _ => None,
+impl ObjectValue {
+    pub fn as_noob(&self) -> Option<()> {
+        self.is_noob().then_some(())
+    }
+
+    pub fn as_troof(&self) -> Option<bool> {
+        if let &Self::Troof(v) = self {
+            Some(v)
+        } else {
+            None
         }
     }
 
-    pub fn as_int(&self) -> Option<i64> {
-        match *self {
-            Object::Troof(value) => Some(value as i64),
-            Object::Numbr(value) => Some(value),
-            _ => None,
+    pub fn as_numbr(&self) -> Option<i64> {
+        if let &Self::Numbr(v) = self {
+            Some(v)
+        } else {
+            None
         }
     }
 
-    pub fn as_bool(&self) -> bool {
-        match *self {
-            Object::Troof(value) => value,
-            Object::Noob => false,
-            Object::Numbr(value) => value != 0,
-            Object::Numbar(value) => value != 0.,
-            Object::Yarn(ref value) => !value.is_empty(),
+    pub fn as_numbar(&self) -> Option<f64> {
+        if let &Self::Numbar(v) = self {
+            Some(v)
+        } else {
+            None
         }
     }
 
-    pub fn as_yarn(&self) -> String {
-        self.to_string()
-    }
-
-    pub fn get_type(&self) -> ObjectType {
-        match self {
-            Object::Noob => ObjectType::Noob,
-            Object::Troof(_) => ObjectType::Troof,
-            Object::Numbr(_) => ObjectType::Numbr,
-            Object::Numbar(_) => ObjectType::Numbar,
-            Object::Yarn(_) => ObjectType::Yarn,
+    pub fn as_yarn(&self) -> Option<&str> {
+        if let Self::Yarn(v) = self {
+            Some(v)
+        } else {
+            None
         }
     }
-}
 
-impl fmt::Display for Object {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Object::Noob => write!(f, "NOOB"),
-            Object::Troof(value) => write!(f, "{}", bool_as_troof(*value)),
-            Object::Numbr(value) => write!(f, "{}", value),
-            Object::Numbar(value) => write!(f, "{}", value),
-            Object::Yarn(value) => write!(f, "{}", value),
+    pub fn as_bukkit(&self) -> Option<&Bukkit> {
+        if let Self::Bukkit(v) = self {
+            Some(v)
+        } else {
+            None
         }
     }
-}
 
-fn bool_as_troof(value: bool) -> &'static str {
-    if value {
-        "WIN"
-    } else {
-        "FAIL"
+    pub fn as_funkshun(&self) -> Option<&Funkshun> {
+        if let Self::Funkshun(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    /// Returns `true` if the object value is [`Noob`].
+    ///
+    /// [`Noob`]: ObjectValue::Noob
+    #[must_use]
+    pub fn is_noob(&self) -> bool {
+        matches!(self, Self::Noob)
+    }
+
+    /// Returns `true` if the object value is [`Troof`].
+    ///
+    /// [`Troof`]: ObjectValue::Troof
+    #[must_use]
+    pub fn is_troof(&self) -> bool {
+        matches!(self, Self::Troof(..))
+    }
+
+    /// Returns `true` if the object value is [`Numbr`].
+    ///
+    /// [`Numbr`]: ObjectValue::Numbr
+    #[must_use]
+    pub fn is_numbr(&self) -> bool {
+        matches!(self, Self::Numbr(..))
+    }
+
+    /// Returns `true` if the object value is [`Numbar`].
+    ///
+    /// [`Numbar`]: ObjectValue::Numbar
+    #[must_use]
+    pub fn is_numbar(&self) -> bool {
+        matches!(self, Self::Numbar(..))
+    }
+
+    /// Returns `true` if the object value is [`Yarn`].
+    ///
+    /// [`Yarn`]: ObjectValue::Yarn
+    #[must_use]
+    pub fn is_yarn(&self) -> bool {
+        matches!(self, Self::Yarn(..))
+    }
+
+    /// Returns `true` if the object value is [`Bukkit`].
+    ///
+    /// [`Bukkit`]: ObjectValue::Bukkit
+    #[must_use]
+    pub fn is_bukkit(&self) -> bool {
+        matches!(self, Self::Bukkit(..))
+    }
+
+    /// Returns `true` if the object value is [`Funkshun`].
+    ///
+    /// [`Funkshun`]: ObjectValue::Funkshun
+    #[must_use]
+    pub fn is_funkshun(&self) -> bool {
+        matches!(self, Self::Funkshun(..))
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum ObjectType {
-    Noob,
-    Troof,
-    Numbr,
-    Numbar,
-    Yarn,
+#[derive(Debug, Clone)]
+pub struct Bukkit {
+    // the scope where the bukkit is defined is the parent scope
+    inner_scope: SharedScope,
 }
 
-impl ObjectType {
-    pub fn is_int(&self) -> bool {
-        matches!(self, Self::Numbr)
+impl Bukkit {
+    pub fn new(parent: SharedScope) -> Self {
+        Self {
+            inner_scope: SharedScope::new(Some(parent)),
+        }
     }
 
-    pub fn is_float(&self) -> bool {
-        matches!(self, Self::Numbar)
+    pub fn scope(&self) -> &SharedScope {
+        &self.inner_scope
     }
+}
 
-    pub fn is_numeric(&self) -> bool {
-        self.is_int() || self.is_float()
+impl Deref for Bukkit {
+    type Target = SharedScope;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner_scope
     }
+}
+
+impl DerefMut for Bukkit {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner_scope
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Funkshun {
+    // the scope where the funkshun is defined is the parent scope
+    pub scope: SharedScope,
+    pub args: Vec<FuncArg>,
+    pub block: Block,
 }

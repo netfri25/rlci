@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+clap = { version = "4.5.16", features = ["derive"] }
+derive_more = { version = "1.0.0", default-features = false, features = ["display"] }
+diff-enum = "0.1.4"
+thiserror = "1.0.63"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

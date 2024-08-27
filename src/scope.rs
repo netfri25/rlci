@@ -1,52 +1,119 @@
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
-use crate::object::Object;
+use crate::object::{Object, ObjectValue};
 
-// non thread safe
-#[derive(Debug, Default, PartialEq)]
-pub struct Scope {
-    defs: HashMap<String, Object>,
-    parent: Option<Box<Self>>,
+#[derive(Debug, Clone, Default)]
+pub struct SharedScope(Arc<RwLock<Scope>>);
+
+impl SharedScope {
+    pub fn new(parent: Option<SharedScope>) -> Self {
+        Self(Arc::new(RwLock::new(Scope::new(parent))))
+    }
+
+    pub fn parent(&self) -> Option<SharedScope> {
+        self.0.read().unwrap().parent.clone()
+    }
+
+    pub fn define(&self, name: String, value: Object) -> Result<(), Error> {
+        self.0.write().unwrap().define(name, value)
+    }
+
+    pub fn get(&self, name: &str) -> Result<Object, Error> {
+        self.0.read().unwrap().get(name)
+    }
+
+    pub fn assign_ref(&self, name: &str, value: Object) -> Result<(), Error> {
+        self.0.write().unwrap().assign_ref(name, value)
+    }
+
+    pub fn assign_value(&self, name: &str, value: ObjectValue) -> Result<(), Error> {
+        self.0.write().unwrap().assign_value(name, value)
+    }
+
+    pub fn get_it(&self) -> Object {
+        self.0.read().unwrap().get_it()
+    }
+
+    pub fn set_it_value(&self, value: ObjectValue) {
+        self.0.write().unwrap().set_it_value(value)
+    }
+
+    pub fn set_it_ref(&self, value: Object) {
+        self.0.write().unwrap().set_it_ref(value)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct Scope {
+    vars: HashMap<String, Object>,
+    it: Object,
+    parent: Option<SharedScope>,
 }
 
 impl Scope {
-    pub fn new(defs: impl Into<HashMap<String, Object>>, parent: impl Into<Option<Self>>) -> Self {
-        let defs = defs.into();
-        let parent = parent.into().map(Box::new);
-        Self { defs, parent }
+    pub fn new(parent: Option<SharedScope>) -> Self {
+        let vars = Default::default();
+        let it = Object::default();
+        Self { vars, it, parent }
     }
 
-    pub fn set_parent(&mut self, parent: Self) -> Option<Self> {
-        if let Some(ref mut parent_box) = self.parent {
-            Some(std::mem::replace(parent_box.as_mut(), parent))
-        } else {
-            self.parent.replace(Box::new(parent));
-            None
+    pub fn define(&mut self, name: String, value: Object) -> Result<(), Error> {
+        if self.vars.contains_key(&name) {
+            return Err(Error::AlreadyExists(name));
         }
+
+        self.vars.insert(name, value);
+        Ok(())
     }
 
-    pub fn take_parent(&mut self) -> Option<Self> {
-        self.parent.take().map(|b| *b)
+    pub fn get(&self, name: &str) -> Result<Object, Error> {
+        if let Some(obj) = self.vars.get(name).cloned() {
+            return Ok(obj);
+        }
+
+        self.parent
+            .as_ref()
+            .ok_or_else(|| Error::DoesNotExist(name.to_string()))
+            .and_then(|parent| parent.get(name))
     }
 
-    pub fn lookup_self(&self, name: &str) -> Option<&Object> {
-        self.defs.get(name)
+    pub fn assign_ref(&mut self, name: &str, value: Object) -> Result<(), Error> {
+        if let Some(obj) = self.vars.get_mut(name) {
+            *obj = value;
+            return Ok(());
+        }
+
+        self.parent
+            .as_ref()
+            .ok_or_else(|| Error::DoesNotExist(name.to_string()))
+            .and_then(move |parent| parent.assign_ref(name, value))
     }
 
-    pub fn lookup(&self, name: &str) -> Option<&Object> {
-        self.lookup_self(name)
-            .or_else(|| self.parent.as_ref().and_then(|parent| parent.lookup(name)))
+    pub fn assign_value(&mut self, name: &str, value: ObjectValue) -> Result<(), Error> {
+        let object = self.get(name)?;
+        object.set(value);
+        Ok(())
     }
 
-    pub fn define(&mut self, name: String, value: Object) {
-        self.defs.insert(name, value);
+    pub fn get_it(&self) -> Object {
+        self.it.clone()
     }
 
-    pub fn set(&mut self, name: &str, value: Object) -> bool {
-        self.defs.get_mut(name).map(|obj| *obj = value).is_some()
+    pub fn set_it_value(&mut self, value: ObjectValue) {
+        self.it.set(value)
     }
 
-    pub fn remove(&mut self, name: &str) -> bool {
-        self.defs.remove(name).is_some()
+    pub fn set_it_ref(&mut self, value: Object) {
+        self.it = value
     }
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum Error {
+    #[error("redefinition of `{0}`")]
+    AlreadyExists(String),
+
+    #[error("`{0}` does not exist")]
+    DoesNotExist(String),
 }

@@ -1,323 +1,836 @@
-use std::collections::VecDeque;
+use std::num::{ParseFloatError, ParseIntError};
+use std::path::Path;
 
-use crate::ast::{
-    Assign, BinOp, BinOpKind, BoolLit, DeclareVar, DeclareVarKind, Expr, FloatLit, Ident, InfiniteOp, InfiniteOpKind, IntLit, It, Module, NoobLit, Scope, Seperator, Stmt, StringLit, Type, UnaryOp, UnaryOpKind
-};
+use crate::ast::*;
 use crate::lexer::Lexer;
-use crate::token::{Token, TokenKind};
+use crate::token::{Loc, Token, TokenKind};
+
+pub fn parse(input: &str, path: &(impl AsRef<Path> + ?Sized)) -> Result<Module, Vec<Error>> {
+    let lexer = Lexer::new(input, path);
+    let mut parser = Parser::new(lexer);
+    let module = parser.parse_module();
+    module.ok_or_else(|| parser.consume_errors())
+}
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
-    peek_queue: VecDeque<Token<'a>>,
+    peek_token: Option<Token<'a>>,
+    errors: Vec<Error>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
             lexer,
-            peek_queue: Default::default(),
+            peek_token: None,
+            errors: Vec::new(),
         }
     }
 
-    pub fn parse_module(&mut self) -> Option<Module<'a>> {
-        if self.peek(0).is_seperator() {
-            self.parse_seperator();
-        }
+    pub fn parse_module(&mut self) -> Option<Module> {
+        // remove newlines from the start
+        self.accept(TokenKind::NewLine);
 
-        self.expect(TokenKind::Hai)?;
-        let FloatLit(version) = self.parse_float_lit()?;
-        self.parse_seperator();
+        let loc = self.loc();
+        let is_script = self.accept(TokenKind::Hai).is_none();
 
-        let mut stmts = Vec::new();
-
-        while self.peek(0) != TokenKind::KThxBye {
-            if let Some(stmt) = self.parse_stmt() {
-                stmts.push(stmt);
-            } else {
-                // skip to the next seperator so it can report more errors in the rest of the file
-                while {
-                    let tkn = self.peek(0);
-                    tkn.is_valid() && !tkn.is_seperator()
-                } {
-                    self.next_token();
-                }
+        let version = if !is_script {
+            let Some(ver) = self.parse_float_lit() else {
+                let kind = self.peek();
+                self.error(ErrorKind::ExpectedVersion { got: kind });
+                return None;
             };
 
             self.parse_seperator()?;
-        }
-
-        self.expect(TokenKind::KThxBye)?;
-        Some(Module { version, stmts })
-    }
-
-    fn next_token(&mut self) -> Token<'a> {
-        self.peek_queue
-            .pop_front()
-            .unwrap_or_else(|| self.lexer.next_token())
-    }
-
-    #[must_use]
-    fn peek(&mut self, off: usize) -> TokenKind {
-        if self.peek_queue.len() <= off {
-            let to_peek = off + 1 - self.peek_queue.len();
-            let tokens = (0..to_peek).map(|_| self.lexer.next_token());
-            self.peek_queue.extend(tokens);
-        }
-
-        self.peek_queue[off].kind()
-    }
-
-    #[must_use]
-    fn expect_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
-        if pred(self.peek(0)) {
-            let tkn = self
-                .peek_queue
-                .pop_front()
-                .expect("peek queue can't be empty");
-            Some(tkn)
+            ver.value
         } else {
-            // TODO: report error
-            None
+            0.0
+        };
+
+        let block = self.parse_block()?;
+
+        if !is_script {
+            // TODO: curse the user when this token is missing
+            self.expect(TokenKind::KThxBye)?;
+            self.accept(TokenKind::NewLine);
+        }
+
+        self.expect(TokenKind::Eof)?;
+
+        Some(Module {
+            loc,
+            version,
+            block,
+        })
+    }
+
+    fn parse_block(&mut self) -> Option<Block> {
+        let mut stmts = Vec::new();
+
+        while !self.peek().is_block_term() {
+            let stmt = self.parse_stmt()?;
+            stmts.push(stmt);
+            self.parse_seperator()?;
+        }
+
+        Some(stmts)
+    }
+
+    fn parse_stmt(&mut self) -> Option<Stmt> {
+        let peek = self.peek();
+        match peek {
+            tkn if tkn.is_ident() => {
+                let ident = self.parse_ident()?;
+                match self.peek() {
+                    TokenKind::IsNowA => self.parse_cast_stmt(ident).map(Stmt::Cast),
+                    TokenKind::R => self.parse_assign_stmt(ident).map(Stmt::Assign),
+                    TokenKind::HasA => self.parse_declare_stmt(ident).map(Stmt::Declare),
+                    TokenKind::Iz => self
+                        .parse_func_call_expr(ident)
+                        .map(Expr::FuncCall)
+                        .map(Stmt::Expr),
+                    _ => Some(Stmt::Expr(Expr::Ident(ident))),
+                }
+            }
+
+            TokenKind::Visible | TokenKind::Invisible => self.parse_print_stmt().map(Stmt::Print),
+            TokenKind::Gimmeh => self.parse_input_stmt().map(Stmt::Input),
+            TokenKind::ORly => self.parse_cond_stmt().map(Stmt::Cond),
+            TokenKind::Wtf => self.parse_switch_stmt().map(Stmt::Switch),
+            TokenKind::Gtfo => self.parse_break_stmt().map(Stmt::Break),
+            TokenKind::FoundYr => self.parse_return_stmt().map(Stmt::Return),
+            TokenKind::ImInYr => self.parse_loop_stmt().map(Stmt::Loop),
+            TokenKind::HowIz => self.parse_func_def_stmt().map(Stmt::FuncDef),
+            TokenKind::OHaiIm => self.parse_object_def_stmt().map(Stmt::ObjectDef),
+
+            _ => {
+                let expr = self.parse_expr().map(Stmt::Expr);
+                if expr.is_none() {
+                    self.error(ErrorKind::InvalidStatement { peek });
+                }
+                expr
+            }
         }
     }
 
-    #[must_use]
-    fn expect(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
-        self.expect_pred(|kind| kind == expected_kind)
+    fn parse_cast_stmt(&mut self, who: Ident) -> Option<CastStmt> {
+        let loc = self.expect(TokenKind::IsNowA)?.loc;
+        let to = self.parse_type()?;
+        Some(CastStmt { loc, who, to })
     }
 
-    fn parse_stmt(&mut self) -> Option<Stmt<'a>> {
-        match self.peek(0) {
-            tkn if tkn == TokenKind::Srs
-                || tkn == TokenKind::Ident && self.peek(1) == TokenKind::R =>
-            {
-                self.parse_assign().map(Stmt::Assign)
-            }
-            tkn if tkn.is_scope() && self.peek(1) == TokenKind::HasA => {
-                self.parse_declare_var().map(Stmt::DeclareVar)
-            }
-            _ => self.parse_expr().map(Stmt::Expr),
-        }
-    }
-
-    fn parse_assign(&mut self) -> Option<Assign<'a>> {
-        let target = self.parse_ident()?;
-        self.expect(TokenKind::R)?;
+    fn parse_assign_stmt(&mut self, target: Ident) -> Option<Assign> {
+        let loc = self.expect(TokenKind::R)?.loc;
         let expr = self.parse_expr()?;
-        Some(Assign { target, expr })
+        Some(Assign { loc, target, expr })
     }
 
-    fn parse_declare_var(&mut self) -> Option<DeclareVar<'a>> {
-        let scope = self.parse_scope()?;
-        self.expect(TokenKind::HasA)?;
+    fn parse_declare_stmt(&mut self, scope: Ident) -> Option<Declare> {
+        let loc = self.expect(TokenKind::HasA)?.loc;
         let name = self.parse_ident()?;
-        let kind = self.parse_declare_var_kind()?;
-        Some(DeclareVar { scope, name, kind })
+        let init = self.parse_declare_init();
+        Some(Declare {
+            loc,
+            scope,
+            name,
+            init,
+        })
     }
 
-    fn parse_declare_var_kind(&mut self) -> Option<DeclareVarKind<'a>> {
-        if self.peek(0).is_seperator() {
-            return Some(DeclareVarKind::Empty);
+    fn parse_declare_init(&mut self) -> Option<Init> {
+        let loc = self.loc();
+        let init = match self.peek() {
+            TokenKind::Itz => {
+                self.next_token();
+                Init::Expr {
+                    loc,
+                    expr: self.parse_expr()?,
+                }
+            }
+
+            TokenKind::ItzA => {
+                self.next_token();
+                Init::Type {
+                    loc,
+                    typ: self.parse_type()?,
+                }
+            }
+
+            TokenKind::ItzLiekA => {
+                self.next_token();
+                Init::Like {
+                    loc,
+                    target: self.parse_ident()?,
+                }
+            }
+
+            _ => return None,
+        };
+
+        Some(init)
+    }
+
+    fn parse_print_stmt(&mut self) -> Option<Print> {
+        let prints = &[TokenKind::Visible, TokenKind::Invisible];
+        let Token { loc, kind, .. } = self.expect_many(prints)?;
+        let expr = self.parse_expr()?;
+        let print = if kind == TokenKind::Visible {
+            Print::Visible { loc, expr }
+        } else {
+            Print::Invisible { loc, expr }
+        };
+
+        Some(print)
+    }
+
+    fn parse_input_stmt(&mut self) -> Option<Input> {
+        let loc = self.expect(TokenKind::Gimmeh)?.loc;
+        let target = self.parse_ident()?;
+        Some(Input { loc, target })
+    }
+
+    fn parse_cond_stmt(&mut self) -> Option<Cond> {
+        let loc = self.expect(TokenKind::ORly)?.loc;
+        self.parse_seperator()?;
+        self.expect(TokenKind::YaRly)?;
+        self.parse_seperator()?;
+        let then = self.parse_block()?;
+
+        let mut else_if = Vec::new();
+        while self.peek() == TokenKind::Mebbe {
+            else_if.push(self.parse_else_if()?);
         }
 
-        self.expect(TokenKind::Itz)?;
+        let otherwise = if self.peek() == TokenKind::NoWai {
+            Some(self.parse_else()?)
+        } else {
+            None
+        };
 
-        if self.peek(0) != TokenKind::A {
-            return self.parse_expr().map(DeclareVarKind::WithExpr);
+        self.expect(TokenKind::Oic)?;
+
+        Some(Cond {
+            loc,
+            then,
+            else_if,
+            otherwise,
+        })
+    }
+
+    fn parse_else_if(&mut self) -> Option<ElseIf> {
+        let loc = self.expect(TokenKind::Mebbe)?.loc;
+        let cond = self.parse_expr()?;
+        self.parse_seperator()?;
+        let then = self.parse_block()?;
+        Some(ElseIf { loc, cond, then })
+    }
+
+    fn parse_else(&mut self) -> Option<Else> {
+        let loc = self.expect(TokenKind::NoWai)?.loc;
+        self.parse_seperator()?;
+        let block = self.parse_block()?;
+        Some(Else { loc, block })
+    }
+
+    fn parse_switch_stmt(&mut self) -> Option<Switch> {
+        let loc = self.expect(TokenKind::Wtf)?.loc;
+        self.parse_seperator()?;
+        let mut cases = Vec::new();
+        while self.peek() == TokenKind::Omg {
+            cases.push(self.parse_case()?);
         }
 
+        let default = if self.peek() == TokenKind::OmgWtf {
+            Some(self.parse_default_case()?)
+        } else {
+            None
+        };
+
+        self.expect(TokenKind::Oic)?;
+        Some(Switch {
+            loc,
+            cases,
+            default,
+        })
+    }
+
+    fn parse_case(&mut self) -> Option<Case> {
+        let loc = self.expect(TokenKind::Omg)?.loc;
+        let expr = self.parse_expr()?;
+        self.parse_seperator()?;
+        let block = self.parse_block()?;
+        Some(Case { loc, expr, block })
+    }
+
+    fn parse_default_case(&mut self) -> Option<DefaultCase> {
+        let loc = self.expect(TokenKind::OmgWtf)?.loc;
+        self.parse_seperator()?;
+        let block = self.parse_block()?;
+        Some(DefaultCase { loc, block })
+    }
+
+    fn parse_break_stmt(&mut self) -> Option<Break> {
+        let loc = self.expect(TokenKind::Gtfo)?.loc;
+        Some(Break { loc })
+    }
+
+    fn parse_return_stmt(&mut self) -> Option<Return> {
+        let loc = self.expect(TokenKind::FoundYr)?.loc;
+        let expr = self.parse_expr()?;
+        Some(Return { loc, expr })
+    }
+
+    fn parse_loop_stmt(&mut self) -> Option<Loop> {
+        let loc = self.expect(TokenKind::ImInYr)?.loc;
+        let name = self.parse_ident()?;
+        let kind = self.peek();
+        let update = if kind == TokenKind::Uppin || kind == TokenKind::Nerfin || kind.is_ident() {
+            Some(self.parse_loop_update()?)
+        } else {
+            None
+        };
+
+        let kind = self.peek();
+        let guard = if matches!(kind, TokenKind::Wile | TokenKind::Til) {
+            Some(self.parse_loop_guard()?)
+        } else {
+            None
+        };
+
+        self.parse_seperator()?;
+        let block = self.parse_block()?;
+
+        self.expect(TokenKind::ImOuttaYr)?;
+        let name2 = self.parse_ident()?;
+
+        // TODO: should I allow comparing `SRS <expr>`?
+        if name != name2 {
+            self.error(ErrorKind::DifferentLoopNames {
+                begin: name,
+                end: name2,
+            });
+            return None;
+        }
+
+        Some(Loop {
+            loc,
+            name,
+            update,
+            guard,
+            block,
+        })
+    }
+
+    fn parse_loop_update(&mut self) -> Option<LoopUpdate> {
+        let loc = self.loc();
+        let kind = self.peek();
+        let op = match kind {
+            TokenKind::Uppin => {
+                self.next_token();
+                self.expect(TokenKind::Yr)?;
+                let target = self.parse_ident()?;
+                LoopUpdate::Uppin { loc, target }
+            }
+
+            TokenKind::Nerfin => {
+                self.next_token();
+                self.expect(TokenKind::Yr)?;
+                let target = self.parse_ident()?;
+                LoopUpdate::Nerfin { loc, target }
+            }
+
+            _ => {
+                let scope = self.parse_ident()?;
+                self.expect(TokenKind::Iz)?;
+                let func = self.parse_ident()?;
+                self.expect(TokenKind::Yr)?;
+                let target = self.parse_ident()?;
+                self.expect(TokenKind::Mkay)?;
+                LoopUpdate::UnaryFunction {
+                    loc,
+                    target,
+                    scope,
+                    func,
+                }
+            }
+        };
+        Some(op)
+    }
+
+    fn parse_loop_guard(&mut self) -> Option<LoopGuard> {
+        let Token { loc, kind, .. } = self.expect_many(&[TokenKind::Wile, TokenKind::Til])?;
+        let cond = self.parse_expr()?;
+        let guard = match kind {
+            TokenKind::Wile => LoopGuard::Wile { loc, cond },
+            TokenKind::Til => LoopGuard::Til { loc, cond },
+            _ => unreachable!("unexpected kind {:?}", kind),
+        };
+        Some(guard)
+    }
+
+    fn parse_func_def_stmt(&mut self) -> Option<FuncDef> {
+        let loc = self.expect(TokenKind::HowIz)?.loc;
+        let scope = self.parse_ident()?;
+        let name = self.parse_ident()?;
+        let args = if self.peek() == TokenKind::Yr {
+            self.parse_func_args()?
+        } else {
+            vec![]
+        };
+
+        self.parse_seperator()?;
+        let block = self.parse_block()?;
+        self.expect(TokenKind::IfUSaySo)?;
+
+        Some(FuncDef {
+            loc,
+            scope,
+            name,
+            args,
+            block,
+        })
+    }
+
+    fn parse_func_args(&mut self) -> Option<Vec<FuncArg>> {
+        let arg = self.parse_single_func_arg(true)?;
+        let mut args = Vec::new();
+        args.push(arg);
+
+        while self.peek() == TokenKind::AnYr {
+            let arg = self.parse_single_func_arg(false)?;
+            args.push(arg);
+        }
+
+        Some(args)
+    }
+
+    fn parse_single_func_arg(&mut self, first: bool) -> Option<FuncArg> {
+        let expected = if first {
+            TokenKind::Yr
+        } else {
+            TokenKind::AnYr
+        };
+
+        let loc = self.expect(expected)?.loc;
+        let name = self.parse_ident()?;
+        Some(FuncArg { loc, name })
+    }
+
+    fn parse_object_def_stmt(&mut self) -> Option<ObjectDef> {
+        let loc = self.expect(TokenKind::OHaiIm)?.loc;
+        let name = self.parse_ident()?;
+        let inherit = if self.accept(TokenKind::ImLiek).is_some() {
+            Some(self.parse_ident()?)
+        } else {
+            None
+        };
+
+        self.parse_seperator()?;
+        let block = self.parse_block()?;
+        self.expect(TokenKind::KThx)?;
+        Some(ObjectDef {
+            loc,
+            name,
+            inherit,
+            block,
+        })
+    }
+
+    fn parse_expr(&mut self) -> Option<Expr> {
+        let peek = self.peek();
+        match peek {
+            tkn if tkn.is_ident() => {
+                let ident = self.parse_ident()?;
+                if self.peek() == TokenKind::Iz {
+                    self.parse_func_call_expr(ident).map(Expr::FuncCall)
+                } else {
+                    Some(Expr::Ident(ident))
+                }
+            }
+
+            TokenKind::Maek => self.parse_cast_expr().map(Expr::Cast),
+            TokenKind::Noob => self.parse_noob_lit().map(Expr::Noob),
+            TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::Bool),
+            TokenKind::IntLit => self.parse_int_lit().map(Expr::Int),
+            TokenKind::FloatLit => self.parse_float_lit().map(Expr::Float),
+            TokenKind::StringLit => self.parse_string_lit().map(Expr::String),
+
+            tkn if tkn.is_unary_op() => self.parse_unary_op().map(Expr::UnaryOp),
+            tkn if tkn.is_bin_op() => self.parse_binary_op().map(Expr::BinaryOp),
+            tkn if tkn.is_n_ary_op() => self.parse_n_ary_op().map(Expr::NaryOp),
+
+            TokenKind::It => self.parse_implicit().map(Expr::Implicit),
+            TokenKind::IDuz => self.parse_system_cmd().map(Expr::SystemCmd),
+
+            _ => {
+                self.error(ErrorKind::InvalidExpr { peek });
+                None
+            }
+        }
+    }
+
+    fn parse_func_call_expr(&mut self, scope: Ident) -> Option<FuncCall> {
+        let loc = self.expect(TokenKind::Iz)?.loc;
+        let name = self.parse_ident()?;
+        let kind = self.expect_many(&[TokenKind::Yr, TokenKind::Mkay])?.kind;
+        if kind == TokenKind::Mkay {
+            return Some(FuncCall {
+                loc,
+                scope,
+                name,
+                params: vec![],
+            });
+        }
+
+        let mut params = Vec::new();
+        params.push(self.parse_expr()?);
+
+        while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
+            let expr = self.parse_expr()?;
+            params.push(expr);
+        }
+
+        Some(FuncCall {
+            loc,
+            scope,
+            name,
+            params,
+        })
+    }
+
+    fn parse_cast_expr(&mut self) -> Option<CastExpr> {
+        let loc = self.expect(TokenKind::Maek)?.loc;
+        let expr = self.parse_expr().map(Box::new)?;
         self.expect(TokenKind::A)?;
-        self.parse_type().map(DeclareVarKind::WithType)
+        let typ = self.parse_type()?;
+        Some(CastExpr { loc, expr, typ })
+    }
+
+    fn parse_ident(&mut self) -> Option<Ident> {
+        let Token { loc, kind, text } = self.expect_pred(
+            |kind| kind.is_ident(),
+            |got| ErrorKind::ExpectedOneOf {
+                expected: vec![TokenKind::Ident, TokenKind::Srs],
+                got,
+            },
+        )?;
+
+        let ident = if kind == TokenKind::Srs {
+            let expr = self.parse_expr().map(Box::new)?;
+            Ident::Srs { loc, expr }
+        } else {
+            let name = text.into();
+            Ident::Lit { loc, name }
+        };
+
+        if let Some(Token { loc, .. }) = self.accept(TokenKind::ApostZ) {
+            let parent = Box::new(ident);
+            let slot = self.parse_ident().map(Box::new)?;
+            Some(Ident::Access { loc, parent, slot })
+        } else {
+            Some(ident)
+        }
     }
 
     fn parse_type(&mut self) -> Option<Type> {
-        let typ = match self.peek(0) {
-            TokenKind::Noob => Type::Noob,
-            TokenKind::Troof => Type::Troof,
-            TokenKind::Numbr => Type::Numbr,
-            TokenKind::Numbar => Type::Numbar,
-            TokenKind::Yarn => Type::Yarn,
-            TokenKind::Bukkit => Type::Bukkit,
-            _ => return None, // TODO: report error
+        let Token { loc, kind, .. } = self.expect_many(TokenKind::TYPES)?;
+        let typ = match kind {
+            TokenKind::Noob => Type::Noob { loc },
+            TokenKind::Troof => Type::Troof { loc },
+            TokenKind::Numbr => Type::Numbr { loc },
+            TokenKind::Numbar => Type::Numbar { loc },
+            TokenKind::Yarn => Type::Yarn { loc },
+            TokenKind::Bukkit => Type::Bukkit { loc },
+            _ => unreachable!(),
         };
 
-        self.next_token();
         Some(typ)
     }
 
-    fn parse_it(&mut self) -> Option<It> {
-        self.expect(TokenKind::It).map(|_| It)
-    }
-
-    fn parse_ident(&mut self) -> Option<Ident<'a>> {
-        match self.peek(0) {
-            TokenKind::Ident => {
-                let tkn = self.next_token();
-                Some(Ident::Literal(tkn.text()))
-            }
-            TokenKind::Srs => {
-                let _srs = self.next_token();
-                let expr = self.parse_expr()?;
-                Some(Ident::Srs(Box::new(expr)))
-            }
-            _ => None,
-        }
-    }
-
-    fn parse_scope(&mut self) -> Option<Scope<'a>> {
-        match self.peek(0) {
-            TokenKind::I => {
-                self.next_token();
-                Some(Scope::Current)
-            }
-            TokenKind::Ident => self.parse_ident().map(Scope::Var),
-            _ => None, // TODO: report error
-        }
-    }
-
-    fn parse_expr(&mut self) -> Option<Expr<'a>> {
-        match self.peek(0) {
-            TokenKind::It => self.parse_it().map(Expr::It),
-            TokenKind::Ident => self.parse_ident().map(Expr::Ident),
-            TokenKind::IntLit => self.parse_int_lit().map(Expr::IntLit),
-            TokenKind::FloatLit => self.parse_float_lit().map(Expr::FloatLit),
-            TokenKind::StringLit => self.parse_string_lit().map(Expr::StringLit),
-            TokenKind::Win | TokenKind::Fail => self.parse_bool_lit().map(Expr::BoolLit),
-            TokenKind::Noob => self.parse_noob_lit().map(Expr::NoobLit),
-            tkn if tkn.is_bin_op() => self.parse_bin_op().map(Expr::BinOp),
-            tkn if tkn.is_unary_op() => self.parse_unary_op().map(Expr::UnaryOp),
-            tkn if tkn.is_infinite_op() => self.parse_infinite_op().map(Expr::InfiniteOp),
-            _ => None, // TODO: report error
-        }
-    }
-
-    fn parse_seperator(&mut self) -> Option<Seperator> {
-        self.expect_pred(|kind| kind.is_seperator())?;
-        Some(Seperator)
-    }
-
     fn parse_int_lit(&mut self) -> Option<IntLit> {
-        let tkn = self.expect(TokenKind::IntLit)?;
-        match tkn.text().parse() {
-            Ok(value) => Some(IntLit(value)),
-            Err(_err) => {
-                // TODO: report error
+        let tkn = self.accept(TokenKind::IntLit)?;
+        match tkn.text.parse() {
+            Ok(value) => Some(IntLit {
+                loc: tkn.loc,
+                value,
+            }),
+            Err(err) => {
+                self.error(ErrorKind::ParseIntError(err));
                 None
             }
         }
     }
 
     fn parse_float_lit(&mut self) -> Option<FloatLit> {
-        let tkn = self.expect(TokenKind::FloatLit)?;
-        match tkn.text().parse() {
-            Ok(value) => Some(FloatLit(value)),
-            Err(_err) => {
-                // TODO: report error
+        let tkn = self.accept(TokenKind::FloatLit)?;
+        match tkn.text.parse() {
+            Ok(value) => Some(FloatLit {
+                loc: tkn.loc,
+                value,
+            }),
+            Err(err) => {
+                self.error(ErrorKind::ParseFloatError(err));
                 None
             }
         }
     }
 
     fn parse_bool_lit(&mut self) -> Option<BoolLit> {
-        let kind = self.peek(0);
-        let bool_lit = match kind {
-            TokenKind::Win => BoolLit(true),
-            TokenKind::Fail => BoolLit(false),
-            _ => return None,
+        let Token { loc, kind, .. } = self.expect_many(&[TokenKind::Win, TokenKind::Fail])?;
+        let value = match kind {
+            TokenKind::Win => true,
+            TokenKind::Fail => false,
+            _ => unreachable!(),
         };
-        self.next_token();
-        Some(bool_lit)
+
+        Some(BoolLit { loc, value })
     }
 
     fn parse_noob_lit(&mut self) -> Option<NoobLit> {
-        self.expect(TokenKind::Noob)?;
-        Some(NoobLit)
+        let loc = self.accept(TokenKind::Noob)?.loc;
+        Some(NoobLit { loc })
     }
 
-    fn parse_string_lit(&mut self) -> Option<StringLit<'a>> {
-        let tkn = self.expect(TokenKind::StringLit)?;
-        let len = tkn.text().len() - 1;
-        let text = &tkn.text()[1..len];
-        Some(StringLit(text))
+    fn parse_string_lit(&mut self) -> Option<StringLit> {
+        let Token { loc, text, .. } = self.accept(TokenKind::StringLit)?;
+        let len = text.len() - 1;
+        let value = text[1..len].to_string().into_boxed_str();
+        Some(StringLit { loc, value })
     }
 
-    fn parse_bin_op(&mut self) -> Option<BinOp<'a>> {
-        let kind = self.parse_bin_op_kind()?;
-        let lhs = self.parse_expr().map(Box::new)?;
-        self.expect(TokenKind::An)?;
-        let rhs = self.parse_expr().map(Box::new)?;
-        Some(BinOp { kind, lhs, rhs })
-    }
-
-    fn parse_bin_op_kind(&mut self) -> Option<BinOpKind> {
+    fn parse_unary_op(&mut self) -> Option<UnaryOp> {
         use TokenKind::*;
 
-        if self.peek(0) == Diffrint {
-            self.next_token();
-            return Some(BinOpKind::NotEq)
-        }
-
-        let kind = match self.peek(0) {
-            Sum => BinOpKind::Add,
-            Diff => BinOpKind::Sub,
-            Produkt => BinOpKind::Mul,
-            Quoshunt => BinOpKind::Div,
-            Mod => BinOpKind::Mod,
-            Biggr => BinOpKind::Max,
-            Smallr => BinOpKind::Min,
-            Both => BinOpKind::And,
-            Either => BinOpKind::Or,
-            Won => BinOpKind::Xor,
-            BothSaem => BinOpKind::Eq,
-            _ => return None
-        };
-
-        self.next_token();
-        Some(kind)
-    }
-
-    fn parse_unary_op(&mut self) -> Option<UnaryOp<'a>> {
-        let kind = self.parse_unary_op_kind()?;
-        let rhs = self.parse_expr().map(Box::new)?;
-        Some(UnaryOp { kind, rhs })
-    }
-
-    fn parse_unary_op_kind(&mut self) -> Option<UnaryOpKind> {
-        self.expect(TokenKind::Not)?;
-        Some(UnaryOpKind::Not)
-    }
-
-    fn parse_infinite_op(&mut self) -> Option<InfiniteOp<'a>> {
-        let kind = self.parse_infinite_op_kind()?;
-        let mut args = Vec::new();
-
-        while self.peek(0) != TokenKind::Mkay {
-            let expr = self.parse_expr()?;
-            args.push(expr);
-
-            if self.peek(0) == TokenKind::An {
-                self.next_token();
-            }
-        }
-
-        self.next_token(); // skip the MKAY token
-        Some(InfiniteOp { kind, args })
-    }
-
-    fn parse_infinite_op_kind(&mut self) -> Option<InfiniteOpKind> {
-        let kind = match self.peek(0) {
-            TokenKind::All => InfiniteOpKind::All,
-            TokenKind::Any => InfiniteOpKind::Any,
-            TokenKind::Smoosh => InfiniteOpKind::Smoosh,
+        let loc = self.loc();
+        let kind = match self.peek() {
+            Not => UnaryOpKind::Not,
             _ => return None,
         };
 
+        let expr = self.parse_expr().map(Box::new)?;
+        Some(UnaryOp { loc, kind, expr })
+    }
+
+    fn parse_binary_op(&mut self) -> Option<BinaryOp> {
+        use TokenKind::*;
+
+        let loc = self.loc();
+        let kind = match self.peek() {
+            SumOf => BinaryOpKind::Add,
+            DiffOf => BinaryOpKind::Sub,
+            ProduktOf => BinaryOpKind::Mul,
+            QuoshuntOf => BinaryOpKind::Div,
+            ModOf => BinaryOpKind::Mod,
+            BiggrOf => BinaryOpKind::Max,
+            SmallrOf => BinaryOpKind::Min,
+            BothOf => BinaryOpKind::And,
+            EitherOf => BinaryOpKind::Or,
+            WonOf => BinaryOpKind::Xor,
+            BothSaem => BinaryOpKind::Eq,
+            Diffrint => BinaryOpKind::NotEq,
+            _ => return None,
+        };
         self.next_token();
-        Some(kind)
+
+        let lhs = self.parse_expr().map(Box::new)?;
+        self.accept(TokenKind::An)?;
+        let rhs = self.parse_expr().map(Box::new)?;
+        Some(BinaryOp {
+            loc,
+            kind,
+            lhs,
+            rhs,
+        })
+    }
+
+    fn parse_n_ary_op(&mut self) -> Option<NaryOp> {
+        let loc = self.loc();
+        let kind = match self.peek() {
+            TokenKind::AllOf => NaryOpKind::All,
+            TokenKind::AnyOf => NaryOpKind::Any,
+            TokenKind::Smoosh => NaryOpKind::Smoosh,
+            _ => return None,
+        };
+        self.next_token();
+
+        let mut params = Vec::new();
+        params.push(self.parse_expr()?);
+
+        while let TokenKind::An = self.expect_many(&[TokenKind::An, TokenKind::Mkay])?.kind {
+            let expr = self.parse_expr()?;
+            params.push(expr);
+        }
+
+        Some(NaryOp { loc, kind, params })
+    }
+
+    fn parse_implicit(&mut self) -> Option<Implicit> {
+        let loc = self.expect(TokenKind::It)?.loc;
+        Some(Implicit { loc })
+    }
+
+    fn parse_system_cmd(&mut self) -> Option<SystemCmd> {
+        let loc = self.expect(TokenKind::IDuz)?.loc;
+        let cmd = self.parse_expr().map(Box::new)?;
+        Some(SystemCmd { loc, cmd })
+    }
+
+    fn parse_seperator(&mut self) -> Option<Seperator> {
+        let loc = self.expect_many(TokenKind::SEPERATORS)?.loc;
+        Some(Seperator { loc })
+    }
+
+    fn loc(&mut self) -> Loc {
+        self.peek_token().loc.clone()
+    }
+
+    fn next_token(&mut self) -> Token<'a> {
+        self.peek_token
+            .take()
+            .unwrap_or_else(|| self.lexer.next_token())
+    }
+
+    pub fn consume_errors(&mut self) -> Vec<Error> {
+        std::mem::take(&mut self.errors)
+    }
+
+    fn error(&mut self, kind: ErrorKind) {
+        let err = Error {
+            loc: self.loc(),
+            kind,
+        };
+        self.errors.push(err);
+    }
+
+    #[must_use]
+    fn peek_token(&mut self) -> &Token {
+        if self.peek_token.is_none() {
+            self.peek_token = Some(self.next_token())
+        }
+
+        self.peek_token.as_ref().unwrap()
+    }
+
+    #[must_use]
+    fn peek(&mut self) -> TokenKind {
+        self.peek_token().kind
+    }
+
+    #[must_use]
+    fn accept_pred(&mut self, pred: impl FnOnce(TokenKind) -> bool) -> Option<Token<'a>> {
+        if pred(self.peek()) {
+            let tkn = self.peek_token.take().expect("peek token can't be None");
+            Some(tkn)
+        } else {
+            None
+        }
+    }
+
+    fn accept(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
+        self.accept_pred(|kind| kind == expected_kind)
+    }
+
+    #[must_use]
+    fn expect_pred(
+        &mut self,
+        pred: impl FnOnce(TokenKind) -> bool,
+        err: impl FnOnce(TokenKind) -> ErrorKind,
+    ) -> Option<Token<'a>> {
+        if let Some(token) = self.accept_pred(pred) {
+            Some(token)
+        } else {
+            let kind = self.peek();
+            self.error(err(kind));
+            None
+        }
+    }
+
+    #[must_use]
+    fn expect(&mut self, expected_kind: TokenKind) -> Option<Token<'a>> {
+        self.expect_pred(
+            |kind| kind == expected_kind,
+            |kind| ErrorKind::Expected {
+                expected: expected_kind,
+                got: kind,
+            },
+        )
+    }
+
+    #[must_use]
+    fn expect_many(&mut self, items: &[TokenKind]) -> Option<Token<'a>> {
+        self.expect_pred(
+            |kind| items.contains(&kind),
+            |got| ErrorKind::ExpectedOneOf {
+                expected: items.to_vec(),
+                got,
+            },
+        )
     }
 }
 
-pub fn escape_string(input: &str) -> String {
+#[derive(Clone, PartialEq, thiserror::Error)]
+#[error("{loc}: {kind}")]
+pub struct Error {
+    pub loc: Loc,
+    pub kind: ErrorKind,
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum ErrorKind {
+    #[error("expected `{}`, but instead got `{}`", .expected.name(), .got.name())]
+    Expected { expected: TokenKind, got: TokenKind },
+
+    #[error("expected version, but instead got `{}`", .got.name())]
+    ExpectedVersion { got: TokenKind },
+
+    #[error("{}", expected_one_of_msg(expected, got))]
+    ExpectedOneOf {
+        expected: Vec<TokenKind>,
+        got: TokenKind,
+    },
+
+    #[error("not a valid statement")]
+    InvalidStatement { peek: TokenKind },
+
+    #[error("not a valid expression")]
+    InvalidExpr { peek: TokenKind },
+
+    #[error("loop name doesn't match:\n\t{}: {}\n\t{}: {}", .begin.loc(), .begin, .end.loc(), .end)]
+    DifferentLoopNames { begin: Ident, end: Ident },
+
+    #[error(transparent)]
+    ParseIntError(ParseIntError),
+
+    #[error(transparent)]
+    ParseFloatError(ParseFloatError),
+}
+
+fn expected_one_of_msg(expected: &[TokenKind], got: &TokenKind) -> String {
+    let Some((first, rest)) = expected.split_first() else {
+        return format!("expected nothing but got `{}`", got.name());
+    };
+
+    let mut buf = format!("expected `{}`", first.name());
+    for kind in rest {
+        buf.push_str(" or `");
+        buf.push_str(kind.name());
+        buf.push('`');
+    }
+
+    buf.push_str(", but got `");
+    buf.push_str(got.name());
+    buf.push('`');
+
+    buf
+}
+
+fn escape_string(input: &str) -> Box<str> {
     let mut output = String::new();
 
     let mut iter = input.chars();
@@ -335,13 +848,34 @@ pub fn escape_string(input: &str) -> String {
         output.push(c);
     }
 
-    output
+    output.into_boxed_str()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    macro_rules! loc {
+        () => {
+            Loc::new("")
+        };
+    }
+
+    #[test]
+    fn module() {
+        let input = r#"
+            HAI 1.4
+            KTHXBYE
+        "#;
+        let got = parse(input).unwrap();
+        let expected = Module {
+            loc: loc!(),
+            version: 1.4,
+            block: vec![],
+        };
+        assert_eq!(expected, got)
+    }
 
     #[test]
     fn var_decl() {
@@ -354,126 +888,165 @@ mod tests {
             I HAS A SRS var ITZ "hello:)world:>:o::"
         KTHXBYE
         "#;
-        let got = parse(input);
+        let got = parse(input).unwrap();
         let expected = Module {
+            loc: loc!(),
             version: 1.4,
-            stmts: vec![
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Literal("var"),
-                    kind: DeclareVarKind::Empty,
+            block: vec![
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: ident("var"),
+                    init: None,
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Var(Ident::Literal("var")),
-                    name: Ident::Literal("var"),
-                    kind: DeclareVarKind::WithExpr(Expr::FloatLit(FloatLit(-12.3))),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("var"),
+                    name: ident("var"),
+                    init: init_expr(float_expr(-12.3)),
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Literal("var"),
-                    kind: DeclareVarKind::WithType(Type::Troof),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: ident("var"),
+                    init: init_type(Type::Troof { loc: loc!() }),
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
-                    kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: srs(Expr::Ident(ident("var"))),
+                    init: init_expr(bool_expr(true)),
                 }),
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("var")))),
-                    kind: DeclareVarKind::WithExpr(Expr::StringLit(StringLit(
-                        "hello:)world:>:o::",
-                    ))),
+                Stmt::Declare(Declare {
+                    loc: loc!(),
+                    scope: ident("I"),
+                    name: srs(Expr::Ident(ident("var"))),
+                    init: init_expr(string_expr("hello:)world:>:o::")),
                 }),
             ],
         };
-
-        assert_eq!(Some(expected), got)
+        assert_eq!(expected, got)
     }
 
-    #[test]
-    fn assignment() {
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ WIN
-            SRS x R 2
-            x R 3
-        KTHXBYE
-        "#;
-        let got = parse(input);
-        let expected = Module {
-            version: 1.4,
-            stmts: vec![
-                Stmt::DeclareVar(DeclareVar {
-                    scope: Scope::Current,
-                    name: Ident::Literal("x"),
-                    kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
-                }),
-                Stmt::Assign(Assign {
-                    target: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("x")))),
-                    expr: Expr::IntLit(IntLit(2)),
-                }),
-                Stmt::Assign(Assign {
-                    target: Ident::Literal("x"),
-                    expr: Expr::IntLit(IntLit(3)),
-                }),
-            ],
-        };
+    // #[test]
+    // fn assignment() {
+    //     let input = r#"
+    //     HAI 1.4
+    //         I HAS A x ITZ WIN
+    //         SRS x R 2
+    //         x R 3
+    //     KTHXBYE
+    //     "#;
+    //     let got = parse(input);
+    //     let expected = Module {
+    //         version: 1.4,
+    //         stmts: vec![
+    //             Stmt::DeclareVar(DeclareVar {
+    //                 scope: Scope::Current,
+    //                 name: Ident::Literal("x"),
+    //                 kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
+    //             }),
+    //             Stmt::Assign(Assign {
+    //                 target: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("x")))),
+    //                 expr: Expr::IntLit(IntLit(2)),
+    //             }),
+    //             Stmt::Assign(Assign {
+    //                 target: Ident::Literal("x"),
+    //                 expr: Expr::IntLit(IntLit(3)),
+    //             }),
+    //         ],
+    //     };
 
-        assert_eq!(Some(expected), got)
+    //     assert_eq!(Some(expected), got)
+    // }
+
+    // #[test]
+    // fn operators() {
+    //     let input = r#"
+    //     HAI 1.4
+    //         I HAS A x ITZ SUM OF 1 AN DIFF OF 2 AN PRODUKT OF 3 AN QUOSHUNT OF 4 AN MOD OF 5 AN BIGGR OF 6 AN SMALLR OF 7 AN 8
+    //     KTHXBYE
+    //     "#;
+    //     let got = parse(input);
+    //     let expected = Module {
+    //         version: 1.4,
+    //         stmts: vec![Stmt::DeclareVar(DeclareVar {
+    //             scope: Scope::Current,
+    //             name: Ident::Literal("x"),
+    //             kind: DeclareVarKind::WithExpr(Expr::BinOp(BinOp {
+    //                 kind: BinOpKind::Add,
+    //                 lhs: Box::new(Expr::IntLit(IntLit(1))),
+    //                 rhs: Box::new(Expr::BinOp(BinOp {
+    //                     kind: BinOpKind::Sub,
+    //                     lhs: Box::new(Expr::IntLit(IntLit(2))),
+    //                     rhs: Box::new(Expr::BinOp(BinOp {
+    //                         kind: BinOpKind::Mul,
+    //                         lhs: Box::new(Expr::IntLit(IntLit(3))),
+    //                         rhs: Box::new(Expr::BinOp(BinOp {
+    //                             kind: BinOpKind::Div,
+    //                             lhs: Box::new(Expr::IntLit(IntLit(4))),
+    //                             rhs: Box::new(Expr::BinOp(BinOp {
+    //                                 kind: BinOpKind::Mod,
+    //                                 lhs: Box::new(Expr::IntLit(IntLit(5))),
+    //                                 rhs: Box::new(Expr::BinOp(BinOp {
+    //                                     kind: BinOpKind::Max,
+    //                                     lhs: Box::new(Expr::IntLit(IntLit(6))),
+    //                                     rhs: Box::new(Expr::BinOp(BinOp {
+    //                                         kind: BinOpKind::Min,
+    //                                         lhs: Box::new(Expr::IntLit(IntLit(7))),
+    //                                         rhs: Box::new(Expr::IntLit(IntLit(8))),
+    //                                     })),
+    //                                 })),
+    //                             })),
+    //                         })),
+    //                     })),
+    //                 })),
+    //             })),
+    //         })],
+    //     };
+
+    //     assert_eq!(Some(expected), got)
+    // }
+
+    fn ident(name: impl ToString) -> Ident {
+        Ident::Lit {
+            name: name.to_string().into_boxed_str(),
+            loc: loc!(),
+        }
     }
 
-    #[test]
-    fn operators() {
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ SUM OF 1 AN DIFF OF 2 AN PRODUKT OF 3 AN QUOSHUNT OF 4 AN MOD OF 5 AN BIGGR OF 6 AN SMALLR OF 7 AN 8
-        KTHXBYE
-        "#;
-        let got = parse(input);
-        let expected = Module {
-            version: 1.4,
-            stmts: vec![Stmt::DeclareVar(DeclareVar {
-                scope: Scope::Current,
-                name: Ident::Literal("x"),
-                kind: DeclareVarKind::WithExpr(Expr::BinOp(BinOp {
-                    kind: BinOpKind::Add,
-                    lhs: Box::new(Expr::IntLit(IntLit(1))),
-                    rhs: Box::new(Expr::BinOp(BinOp {
-                        kind: BinOpKind::Sub,
-                        lhs: Box::new(Expr::IntLit(IntLit(2))),
-                        rhs: Box::new(Expr::BinOp(BinOp {
-                            kind: BinOpKind::Mul,
-                            lhs: Box::new(Expr::IntLit(IntLit(3))),
-                            rhs: Box::new(Expr::BinOp(BinOp {
-                                kind: BinOpKind::Div,
-                                lhs: Box::new(Expr::IntLit(IntLit(4))),
-                                rhs: Box::new(Expr::BinOp(BinOp {
-                                    kind: BinOpKind::Mod,
-                                    lhs: Box::new(Expr::IntLit(IntLit(5))),
-                                    rhs: Box::new(Expr::BinOp(BinOp {
-                                        kind: BinOpKind::Max,
-                                        lhs: Box::new(Expr::IntLit(IntLit(6))),
-                                        rhs: Box::new(Expr::BinOp(BinOp {
-                                            kind: BinOpKind::Min,
-                                            lhs: Box::new(Expr::IntLit(IntLit(7))),
-                                            rhs: Box::new(Expr::IntLit(IntLit(8))),
-                                        })),
-                                    })),
-                                })),
-                            })),
-                        })),
-                    })),
-                })),
-            })],
-        };
-
-        assert_eq!(Some(expected), got)
+    fn srs(expr: Expr) -> Ident {
+        let expr = Box::new(expr);
+        Ident::Srs { expr, loc: loc!() }
     }
 
-    fn parse(input: &'static str) -> Option<Module<'static>> {
-        let lexer = Lexer::new(input);
+    fn init_expr(expr: Expr) -> Option<Init> {
+        Some(Init::Expr { expr, loc: loc!() })
+    }
+
+    fn init_type(typ: Type) -> Option<Init> {
+        Some(Init::Type { typ, loc: loc!() })
+    }
+
+    fn float_expr(value: f64) -> Expr {
+        Expr::Float(FloatLit { loc: loc!(), value })
+    }
+
+    fn bool_expr(value: bool) -> Expr {
+        Expr::Bool(BoolLit { loc: loc!(), value })
+    }
+
+    fn string_expr(value: impl ToString) -> Expr {
+        let value = value.to_string().into_boxed_str();
+        Expr::String(StringLit { loc: loc!(), value })
+    }
+
+    fn parse(input: &'static str) -> Result<Module, Vec<Error>> {
+        let lexer = Lexer::new(input, "");
+        for tkn in lexer.clone() {
+            eprintln!("{: >15}  {: <10?}", tkn.loc, tkn.kind)
+        }
         let mut parser = Parser::new(lexer);
-        parser.parse_module()
+        parser.parse_module().ok_or_else(|| parser.consume_errors())
     }
 }

@@ -1,560 +1,196 @@
-use std::num::ParseIntError;
+use std::path::Path;
 
-use crate::ast;
-use crate::object::{Object, ObjectType};
-use crate::scope::Scope;
+use crate::object::{Object, ObjectValue};
+use crate::token::Loc;
+use crate::{ast::*, parser, scope};
 
-#[derive(Debug, Default, PartialEq)]
-pub struct Interpreter {
-    pub scope: Scope,
-    pub it: Object,
-}
+use crate::scope::SharedScope;
 
-pub type Result<T> = ::std::result::Result<T, Error>;
+#[derive(Debug, Default)]
+pub struct Interpreter;
 
 impl Interpreter {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn eval_file(&mut self, path: &(impl AsRef<Path> + ?Sized)) -> Result<SharedScope, Error> {
+        let path = path.as_ref();
+        let input = std::fs::read_to_string(path).map_err(|err| Error::ReadFile {
+            path: path.to_string_lossy().to_string(),
+            reason: err.kind(),
+        })?;
+
+        let module = parser::parse(&input, path).map_err(Error::Parser)?;
+        self.eval_module(module)
     }
 
-    pub fn interpret_module(&mut self, module: ast::Module) -> Result<()> {
-        for stmt in module.stmts {
-            self.interpret_stmt(stmt)?
+    pub fn eval_module(&mut self, module: Module) -> Result<SharedScope, Error> {
+        let scope = SharedScope::default();
+        for stmt in module.block {
+            self.eval_stmt(&stmt, &scope)?
         }
-        Ok(())
+
+        Ok(scope)
     }
 
-    fn interpret_stmt(&mut self, stmt: ast::Stmt) -> Result<()> {
+    pub fn eval_stmt(&mut self, stmt: &Stmt, scope: &SharedScope) -> Result<(), Error> {
         match stmt {
-            ast::Stmt::Expr(expr) => {
-                self.it = self.interpret_expr(expr)?;
-                Ok(())
-            }
-            ast::Stmt::DeclareVar(decl_var) => self.interpret_declare_var(decl_var),
-            ast::Stmt::Assign(assign) => self.interpret_assign(assign),
+            Stmt::Cast(_) => todo!(),
+            Stmt::Print(_) => todo!(),
+            Stmt::Input(_) => todo!(),
+            Stmt::Assign(_) => todo!(),
+            Stmt::Declare(_) => todo!(),
+            Stmt::Cond(_) => todo!(),
+            Stmt::Switch(_) => todo!(),
+            Stmt::Loop(_) => todo!(),
+            Stmt::FuncDef(_) => todo!(),
+            Stmt::ObjectDef(_) => todo!(),
+            Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it_ref(obj)),
+            Stmt::Break(Break { loc }) => Err(Error::InvalidBreak(loc.clone())),
+            Stmt::Return(Return { loc, .. }) => Err(Error::InvalidReturn(loc.clone())),
         }
     }
 
-    fn interpret_expr(&mut self, expr: ast::Expr) -> Result<Object> {
+    pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
         match expr {
-            ast::Expr::It(ast::It) => Ok(self.get_it()),
-            ast::Expr::Ident(ident) => {
-                let name = self.eval_ident(ident)?;
-                self.lookup(&name)
+            Expr::Cast(_) => todo!(),
+            Expr::Bool(BoolLit { value, .. }) => Ok(Object::new(ObjectValue::Troof(*value))),
+            Expr::Int(IntLit { value, .. }) => Ok(Object::new(ObjectValue::Numbr(*value))),
+            Expr::Float(FloatLit { value, .. }) => Ok(Object::new(ObjectValue::Numbar(*value))),
+            Expr::String(StringLit { value, .. }) => {
+                Ok(Object::new(ObjectValue::Yarn(value.to_string())))
             }
-            ast::Expr::IntLit(ast::IntLit(value)) => Ok(Object::Numbr(value)),
-            ast::Expr::FloatLit(ast::FloatLit(value)) => Ok(Object::Numbar(value)),
-            ast::Expr::StringLit(ast::StringLit(value)) => Ok(Object::Yarn(self.escape(value)?)),
-            ast::Expr::BoolLit(ast::BoolLit(value)) => Ok(Object::Troof(value)),
-            ast::Expr::NoobLit(ast::NoobLit) => Ok(Object::Noob),
-            ast::Expr::BinOp(op_expr) => self.interpret_bin_op_expr(op_expr),
-            ast::Expr::UnaryOp(op_expr) => self.interpret_unary_op_expr(op_expr),
-            ast::Expr::InfiniteOp(op_expr) => self.interpret_infinite_op_expr(op_expr),
+            Expr::Noob(_) => Ok(Object::new(ObjectValue::Noob)),
+            Expr::Ident(ident) => self.eval_ident(ident, scope),
+            Expr::FuncCall(func_call) => self.eval_func_call(func_call, scope),
+            Expr::UnaryOp(_) => todo!(),
+            Expr::BinaryOp(_) => todo!(),
+            Expr::NaryOp(_) => todo!(),
+            Expr::Implicit(_) => todo!(),
+            Expr::SystemCmd(_) => todo!(),
         }
     }
 
-    fn interpret_bin_op_expr(&mut self, ast::BinOp { kind, lhs, rhs }: ast::BinOp) -> Result<Object> {
-        let lhs = self.interpret_expr(*lhs)?;
-
-        // boolean expressions
-        match kind {
-            ast::BinOpKind::And => {
-                return if lhs.as_bool() {
-                    let value = self.interpret_expr(*rhs)?.as_bool();
-                    Ok(Object::Troof(value))
-                } else {
-                    Ok(Object::Troof(false))
-                }
-            },
-            ast::BinOpKind::Or => {
-                return if lhs.as_bool() {
-                    Ok(Object::Troof(true))
-                } else {
-                    let value = self.interpret_expr(*rhs)?.as_bool();
-                    Ok(Object::Troof(value))
-                }
-            },
-            ast::BinOpKind::Xor => {
-                let rhs = self.interpret_expr(*rhs)?;
-                return Ok(Object::Troof(lhs.as_bool() != rhs.as_bool()))
-            }
-            _ => {}
-        }
-
-        let rhs = self.interpret_expr(*rhs)?;
-
-        // comparisons
-        match kind {
-            ast::BinOpKind::Eq => {
-                return Ok(Object::Troof(lhs == rhs))
-            }
-            ast::BinOpKind::NotEq => {
-                return Ok(Object::Troof(lhs != rhs))
-            }
-            _ => {}
-        }
-
-        // arithmetic expressions
-        let lhs_type = lhs.get_type();
-        if !lhs_type.is_numeric() {
-            return Err(LhsNotNumeric(lhs_type));
-        }
-
-        let rhs_type = rhs.get_type();
-        if !rhs_type.is_numeric() {
-            return Err(RhsNotNumeric(rhs_type));
-        }
-
-        if lhs_type.is_float() || rhs_type.is_float() {
-            let lhs = lhs.as_float().expect("lhs is known to be float");
-            let rhs = rhs.as_float().expect("rhs is known to be float");
-            let output = float_op(kind, lhs, rhs)?;
-            Ok(Object::Numbar(output))
-        } else {
-            let lhs = lhs.as_int().expect("lhs is known to be int");
-            let rhs = rhs.as_int().expect("rhs is known to be int");
-            let output = int_op(kind, lhs, rhs)?;
-            Ok(Object::Numbr(output))
-        }
-    }
-
-    fn interpret_unary_op_expr(&mut self, ast::UnaryOp { kind, rhs }: ast::UnaryOp) -> Result<Object> {
-        let rhs = self.interpret_expr(*rhs)?;
-        match kind {
-            ast::UnaryOpKind::Not => Ok(Object::Troof(!rhs.as_bool())),
-        }
-    }
-
-    fn interpret_infinite_op_expr(&mut self, ast::InfiniteOp { kind, args }: ast::InfiniteOp) -> Result<Object> {
-        let callback = match kind {
-            ast::InfiniteOpKind::All => Self::interpret_infinite_all_operator,
-            ast::InfiniteOpKind::Any => Self::interpret_infinite_any_operator,
-            ast::InfiniteOpKind::Smoosh => Self::interpret_infinite_smoosh_operator,
-        };
-
-        callback(self, args)
-    }
-
-    fn interpret_infinite_all_operator(&mut self, args: Vec<ast::Expr>) -> Result<Object> {
-        for arg in args {
-            let value = self.interpret_expr(arg)?.as_bool();
-            // short-circuiting on a `false` value
-            if !value {
-                return Ok(Object::Troof(false))
-            }
-        }
-
-        Ok(Object::Troof(true))
-    }
-
-    fn interpret_infinite_any_operator(&mut self, args: Vec<ast::Expr>) -> Result<Object> {
-        for arg in args {
-            let value = self.interpret_expr(arg)?.as_bool();
-            // short-circuiting on a `true` value
-            if value {
-                return Ok(Object::Troof(true))
-            }
-        }
-
-        Ok(Object::Troof(false))
-    }
-
-    fn interpret_infinite_smoosh_operator(&mut self, args: Vec<ast::Expr>) -> Result<Object> {
-        let mut acc = String::new();
-        for arg in args {
-            let value = self.interpret_expr(arg)?.as_yarn();
-            acc += &value;
-        }
-
-        Ok(Object::Yarn(acc))
-    }
-
-    fn interpret_declare_var(&mut self, decl_var: ast::DeclareVar) -> Result<()> {
-        let ast::DeclareVar { scope, name, kind } = decl_var;
-
-        if scope != ast::Scope::Current {
-            todo!("declarations for variables in scopes that aren't the current scope")
-        }
-
-        let value = match kind {
-            ast::DeclareVarKind::Empty => Object::Noob,
-            ast::DeclareVarKind::WithType(typ) => default_of(typ),
-            ast::DeclareVarKind::WithExpr(expr) => self.interpret_expr(expr)?,
-        };
-
-        let name = self.eval_ident(name)?;
-        self.scope.define(name, value);
-        Ok(())
-    }
-
-    fn interpret_assign(&mut self, assign: ast::Assign) -> Result<()> {
-        let ast::Assign { target, expr } = assign;
-
-        let name = self.eval_ident(target)?;
-        let value = self.interpret_expr(expr)?;
-        if matches!(value, Object::Noob) {
-            // "deallocate" the object
-            self.remove(&name)
-        } else {
-            self.assign(&name, value)
-        }
-    }
-
-    fn eval_ident(&mut self, ident: ast::Ident) -> Result<String> {
-        Ok(match ident {
-            ast::Ident::Literal(lit) => lit.to_string(),
-            ast::Ident::Srs(expr) => self.interpret_expr(*expr)?.to_string(),
-        })
-    }
-
-    fn start_scope(&mut self) {
-        let parent = std::mem::take(&mut self.scope);
-        self.scope.set_parent(parent);
-    }
-
-    fn end_scope(&mut self) -> Result<()> {
-        let parent = self.scope.take_parent().ok_or(NoParentScope)?;
-        self.scope = parent;
-        Ok(())
-    }
-
-    fn lookup(&self, name: &str) -> Result<Object> {
-        self.scope
-            .lookup(name)
-            .cloned()
-            .ok_or_else(|| VariableDoesNotExist(name.to_string()))
-    }
-
-    fn assign(&mut self, name: &str, value: Object) -> Result<()> {
-        self.scope
-            .set(name, value)
-            .then_some(())
-            .ok_or_else(|| VariableDoesNotExist(name.to_string()))
-    }
-
-    fn remove(&mut self, name: &str) -> Result<()> {
-        self.scope
-            .remove(name)
-            .then_some(())
-            .ok_or_else(|| VariableDoesNotExist(name.to_string()))
-    }
-
-    fn get_it(&mut self) -> Object {
-        self.it.clone()
-    }
-
-    fn escape(&self, input: &str) -> Result<String> {
-        let mut output = String::new();
-
-        let mut iter = input.chars();
-        while let Some(mut c) = iter.next() {
-            if c == ':' {
-                let code = iter.next().unwrap_or_default();
-                c = match code {
-                    ')' => '\n',
-                    '>' => '\t',
-                    'o' => 0x07 as char, // bell ansi code
-                    '(' => {
-                        // convert hex code to a character
-                        let Some((mut hex_number, _)) = iter.as_str().split_once(')') else {
-                            output.push(code);
-                            continue;
-                        };
-
-                        iter.nth(hex_number.len()); // also skips the closing paren
-                        if hex_number.starts_with("0x") {
-                            hex_number = &hex_number[2..];
-                        }
-
-                        let code = match u32::from_str_radix(hex_number, 16) {
-                            Ok(code) => code,
-                            Err(err) => return Err(ParseInt(err)),
-                        };
-
-                        char::from_u32(code).ok_or(InvalidCharCode(code))?
-                    }
-                    '{' => {
-                        // variable string interpolation
-                        let Some((name, _)) = iter.as_str().split_once('}') else {
-                            output.push(code);
-                            continue;
-                        };
-
-                        iter.nth(name.len()); // also skips the closing brace
-                        let value = self.lookup(name)?.to_string();
-                        output.push_str(&value);
-                        continue;
-                    }
-                    '[' => {
-                        todo!("unicode normative names")
-                    }
-                    other => other,
+    pub fn eval_ident_name(&mut self, ident: &Ident, scope: &SharedScope) -> Result<String, Error> {
+        match ident {
+            Ident::Lit { name, .. } => Ok(name.to_string()),
+            Ident::Srs { expr, loc } => self
+                .eval_expr(expr, scope)
+                .and_then(|obj| self.cast_string(loc.clone(), &obj.get())),
+            Ident::Access { parent, slot, loc } => {
+                let parent_name = self.eval_ident_name(parent, scope)?;
+                let parent_object = self.eval_ident(parent, scope)?;
+                let ObjectValue::Bukkit(ref parent_bukkit) = *parent_object.get() else {
+                    return Err(Error::NotABukkit(parent.loc().clone(), parent_name));
                 };
-            };
 
-            output.push(c);
+                let slot_object = self.eval_ident(slot, parent_bukkit.scope())?;
+                let slot_value = slot_object.get();
+                self.cast_string(loc.clone(), &slot_value)
+            }
+        }
+    }
+
+    pub fn eval_ident(&mut self, ident: &Ident, scope: &SharedScope) -> Result<Object, Error> {
+        let name = self.eval_ident_name(ident, scope)?;
+        scope
+            .get(&name)
+            .map_err(|err| Error::Scope(ident.loc().clone(), err))
+    }
+
+    pub fn eval_scope(
+        &mut self,
+        scope_ident: &Ident,
+        scope: &SharedScope,
+    ) -> Result<SharedScope, Error> {
+        if let Ident::Lit { name, .. } = scope_ident {
+            if name.as_ref() == "I" {
+                return Ok(scope.clone());
+            }
+        };
+
+        let scope_name = self.eval_ident_name(scope_ident, scope)?;
+        let scope_object = self.eval_ident(scope_ident, scope)?;
+        let ObjectValue::Bukkit(ref scope_bukkit) = *scope_object.get() else {
+            return Err(Error::NotABukkit(scope_ident.loc().clone(), scope_name));
+        };
+
+        Ok(scope_bukkit.scope().clone())
+    }
+
+    pub fn eval_func_call(
+        &mut self,
+        func_call: &FuncCall,
+        scope: &SharedScope,
+    ) -> Result<Object, Error> {
+        let scope = self.eval_scope(&func_call.scope, scope)?;
+        let func_name = self.eval_ident_name(&func_call.name, &scope)?;
+        let func_object = self.eval_ident(&func_call.name, &scope)?;
+        let ObjectValue::Funkshun(ref func) = *func_object.get() else {
+            return Err(Error::NotCallable(func_call.name.loc().clone(), func_name));
+        };
+
+        let scope = &func.scope;
+        for stmt in &func.block {
+            match stmt {
+                Stmt::Break(_) => return Ok(Object::new(ObjectValue::Noob)),
+                Stmt::Return(Return { expr, .. }) => return self.eval_expr(expr, scope),
+                _ => {}
+            }
+            self.eval_stmt(stmt, scope)?;
         }
 
-        Ok(output)
+        Ok(scope.get_it())
+    }
+
+    pub fn cast_string(&mut self, loc: Loc, value: &ObjectValue) -> Result<String, Error> {
+        let res = match value {
+            ObjectValue::Noob => "NOOB".into(),
+            ObjectValue::Troof(x) => x.to_string(),
+            ObjectValue::Numbr(x) => x.to_string(),
+            ObjectValue::Numbar(x) => x.to_string(),
+            ObjectValue::Yarn(x) => x.clone(),
+            ObjectValue::Bukkit(_) => return Err(Error::CantCastBukkitToYarn(loc)),
+            ObjectValue::Funkshun(_) => return Err(Error::CantCastFunkshunToYarn(loc)),
+        };
+
+        Ok(res)
     }
 }
 
-fn default_of(typ: ast::Type) -> Object {
-    match typ {
-        ast::Type::Noob => Object::Noob,
-        ast::Type::Troof => Object::Troof(false),
-        ast::Type::Numbr => Object::Numbr(0),
-        ast::Type::Numbar => Object::Numbar(0.),
-        ast::Type::Yarn => Object::Yarn(String::default()),
-        ast::Type::Bukkit => todo!("bukkit object"),
-    }
-}
-
-fn float_op(kind: ast::BinOpKind, lhs: f64, rhs: f64) -> Result<f64> {
-    Ok(match kind {
-        ast::BinOpKind::Add => lhs + rhs,
-        ast::BinOpKind::Sub => lhs - rhs,
-        ast::BinOpKind::Mul => lhs * rhs,
-        ast::BinOpKind::Div => lhs / rhs,
-        ast::BinOpKind::Mod => lhs % rhs,
-        ast::BinOpKind::Max => lhs.max(rhs),
-        ast::BinOpKind::Min => lhs.min(rhs),
-        _ => return Err(InvalidNumericBinOp(kind))
-    })
-}
-
-fn int_op(kind: ast::BinOpKind, lhs: i64, rhs: i64) -> Result<i64> {
-    Ok(match kind {
-        ast::BinOpKind::Add => lhs + rhs,
-        ast::BinOpKind::Sub => lhs - rhs,
-        ast::BinOpKind::Mul => lhs * rhs,
-        ast::BinOpKind::Div => lhs / rhs,
-        ast::BinOpKind::Mod => lhs % rhs,
-        ast::BinOpKind::Max => lhs.max(rhs),
-        ast::BinOpKind::Min => lhs.min(rhs),
-        _ => return Err(InvalidNumericBinOp(kind))
-    })
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
-    NoParentScope,
-    VariableDoesNotExist(String),
-    LhsNotNumeric(ObjectType),
-    RhsNotNumeric(ObjectType),
-    ParseInt(ParseIntError),
-    InvalidCharCode(u32),
-    InvalidNumericBinOp(ast::BinOpKind),
+    #[error("unable to read file `{path}`: `{reason}`")]
+    ReadFile {
+        path: String,
+        reason: std::io::ErrorKind,
+    },
+
+    #[error("{}", display_newline(.0))]
+    Parser(Vec<parser::Error>),
+
+    #[error("{0}: {1}")]
+    Scope(Loc, scope::Error),
+
+    #[error("{0}: can't break from here")]
+    InvalidBreak(Loc),
+
+    #[error("{0}: can't return from here")]
+    InvalidReturn(Loc),
+
+    #[error("{0}: can't cast BUKKIT to a YARN")]
+    CantCastBukkitToYarn(Loc),
+
+    #[error("{0}: can't cast FUNKSHUN to a YARN")]
+    CantCastFunkshunToYarn(Loc),
+
+    #[error("{0}: variable `{1}` is not of type BUKKIT")]
+    NotABukkit(Loc, String),
+
+    #[error("{0}: variable `{1} is not callable")]
+    NotCallable(Loc, String),
 }
-use Error::*;
 
-#[cfg(test)]
-mod tests {
-    use crate::lexer::Lexer;
-    use crate::parser::Parser;
-
-    use super::*;
-
-    #[test]
-    fn declarations() {
-        let input = r#"
-        HAI 1.4
-            I HAS A var
-            I HAS A name ITZ "epic name:)"
-            I HAS A var2 ITZ -12.3
-            I HAS A var3 ITZ A TROOF
-            I HAS A SRS name ITZ WIN
-            I HAS A var8 ITZ ":{var3}"
-        KTHXBYE
-        "#;
-        let module = parse(input).unwrap();
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret_module(module).unwrap();
-        assert_eq!(
-            interpreter,
-            Interpreter {
-                scope: Scope::new(
-                    [
-                        ("name".into(), Object::Yarn("epic name\n".into())),
-                        ("var".into(), Object::Noob),
-                        ("var2".into(), Object::Numbar(-12.3)),
-                        ("var3".into(), Object::Troof(false)),
-                        ("var8".into(), Object::Yarn("FAIL".into())),
-                        ("epic name\n".into(), Object::Troof(true)),
-                    ],
-                    None
-                ),
-                it: Object::Noob
-            },
-        )
-    }
-
-    #[test]
-    fn assignment() {
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ 3
-            I HAS A y ITZ WIN
-            I HAS A temp
-            temp R x
-            x R y
-            y R temp
-        KTHXBYE
-        "#;
-        let module = parse(input).unwrap();
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret_module(module).unwrap();
-        assert_eq!(
-            interpreter,
-            Interpreter {
-                scope: Scope::new(
-                    [
-                        ("x".into(), Object::Troof(true)),
-                        ("y".into(), Object::Numbr(3)),
-                        ("temp".into(), Object::Numbr(3)),
-                    ],
-                    None
-                ),
-                it: Object::Noob
-            },
-        )
-    }
-
-    #[test]
-    fn deallocation() {
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ 219374
-            x R NOOB
-        KTHXBYE
-        "#;
-        let module = parse(input).unwrap();
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret_module(module).unwrap();
-        assert_eq!(
-            interpreter,
-            Interpreter {
-                scope: Scope::new([], None),
-                it: Object::Noob
-            },
-        )
-    }
-
-    #[test]
-    fn arith_operators() {
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ SUM OF 1 AN 2
-            I HAS A y ITZ DIFF OF 3 AN 4
-            I HAS A z ITZ PRODUKT OF 5 AN 6
-            I HAS A w ITZ QUOSHUNT OF 12 AN x
-            I HAS A u ITZ MOD OF z AN w
-            I HAS A a ITZ BIGGR OF x AN y
-            I HAS A b ITZ SMALLR OF x AN y
-        KTHXBYE
-        "#;
-        let module = parse(input).unwrap();
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret_module(module).unwrap();
-        assert_eq!(
-            interpreter,
-            Interpreter {
-                scope: Scope::new(
-                    [
-                        ("x".into(), Object::Numbr(3)),
-                        ("y".into(), Object::Numbr(-1)),
-                        ("z".into(), Object::Numbr(30)),
-                        ("w".into(), Object::Numbr(4)),
-                        ("u".into(), Object::Numbr(2)),
-                        ("a".into(), Object::Numbr(3)),
-                        ("b".into(), Object::Numbr(-1)),
-                    ],
-                    None
-                ),
-                it: Object::Noob
-            },
-        )
-    }
-
-    #[test]
-    fn boolean_operators() {
-        // TODO: add a test for short-circuiting after implementing function calls
-        let input = r#"
-        HAI 1.4
-            I HAS A a ITZ BOTH OF "" AN 2465
-            I HAS A b ITZ EITHER OF 0. AN NOT NOOB
-            I HAS A c ITZ WON OF 0. AN NOOB
-            I HAS A d ITZ BOTH OF DIFFRINT a AN b AN BOTH SAEM a AN c
-        KTHXBYE
-        "#;
-        let module = parse(input).unwrap();
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret_module(module).unwrap();
-        assert_eq!(
-            interpreter,
-            Interpreter {
-                scope: Scope::new(
-                    [
-                        ("a".into(), Object::Troof(false)),
-                        ("b".into(), Object::Troof(true)),
-                        ("c".into(), Object::Troof(false)),
-                        ("d".into(), Object::Troof(true)),
-                    ],
-                    None
-                ),
-                it: Object::Noob
-            },
-        )
-    }
-
-    #[test]
-    fn it_variable() {
-        // TODO: add a test for short-circuiting after implementing function calls
-        let input = r#"
-        HAI 1.4
-            SUM OF 3 AN 4, I HAS A it_bigger_equals ITZ BOTH SAEM IT AN BIGGR OF IT AN 8
-            I HAS A it_smaller_equals ITZ BOTH SAEM IT AN SMALLR OF IT AN 8
-        KTHXBYE
-        "#;
-        let module = parse(input).unwrap();
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret_module(module).unwrap();
-        assert_eq!(
-            interpreter,
-            Interpreter {
-                scope: Scope::new(
-                    [
-                        ("it_bigger_equals".into(), Object::Troof(false)),
-                        ("it_smaller_equals".into(), Object::Troof(true)),
-                    ],
-                    None
-                ),
-                it: Object::Numbr(7),
-            },
-        )
-    }
-
-    #[test]
-    fn smoosh() {
-        // language=rust
-        let input = r#"
-        HAI 1.4
-            I HAS A x ITZ 420
-            I HAS A y ITZ 0.69
-            I HAS A a ITZ "OMG NO WAI"
-            I HAS A result ITZ SMOOSH x AN y AN a MKAY
-        KTHXBYE
-        "#;
-        let module = parse(input).unwrap();
-        let mut interpreter = Interpreter::new();
-        interpreter.interpret_module(module).unwrap();
-        let result = interpreter.scope.lookup("result").unwrap();
-        assert_eq!(result, &Object::Yarn("4200.69OMG NO WAI".into()))
-    }
-
-    fn parse(input: &'static str) -> Option<ast::Module<'static>> {
-        let lexer = Lexer::new(input);
-        let mut parser = Parser::new(lexer);
-        parser.parse_module()
-    }
+fn display_newline<T: ToString>(xs: &[T]) -> String {
+    xs.iter()
+        .map(|stmt| stmt.to_string())
+        .collect::<Vec<String>>()
+        .join("\n")
 }

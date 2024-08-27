@@ -1,44 +1,54 @@
-use crate::token::{Token, TokenKind};
+use std::collections::BTreeMap;
+use std::path::Path;
 
+use crate::token::{Loc, Token, TokenKind};
+
+#[derive(Clone)]
 pub struct Lexer<'a> {
     input: &'a str,
+    loc: Loc,
     last_was_newline: bool,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(input: &'a str) -> Self {
+    pub fn new(input: &'a str, path: &(impl AsRef<Path> + ?Sized)) -> Self {
+        let loc = Loc::new(path);
         Self {
             input,
+            loc,
             last_was_newline: false,
         }
     }
 
-    /// returns None when tokenizing has failed.
+    /// returns `TokenKind::Invalid` when tokenizing has failed.
     /// if the lexer has eached the end of the input, it will return the Eof token
     pub fn next_token(&mut self) -> Token<'a> {
         if self.input.is_empty() {
             return self.new_token(0, TokenKind::Eof);
         }
 
+        // also skips whitespace
+        if !self.skip_comments() {
+            return self.new_token(0, TokenKind::Invalid);
+        }
+
         let methods = [
             Self::lex_newline,
-            Self::lex_ident,
-            Self::lex_type,
+            Self::lex_string_lit,
             Self::lex_keyword,
-            Self::lex_bool_lit,
+            Self::lex_ident,
             Self::lex_float_lit,
             Self::lex_int_lit,
-            Self::lex_string_lit,
         ];
 
-        // also skips whitespace
-        self.skip_comments();
-        let Some(token) = methods.into_iter().find_map(|method| method(self)) else {
+        let Some(token @ Token { kind, text, .. }) =
+            methods.into_iter().find_map(|method| method(self))
+        else {
             return self.new_token(0, TokenKind::Invalid);
         };
-        self.consume(token.text().len());
+        self.consume(text.len());
 
-        let is_newline = token.kind() == TokenKind::NewLine;
+        let is_newline = kind == TokenKind::NewLine;
         if self.last_was_newline && is_newline {
             self.next_token()
         } else {
@@ -48,7 +58,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn consume(&mut self, len: usize) {
-        self.input = &self.input[len..]
+        let consumed;
+        (consumed, self.input) = self.input.split_at(len);
+        for c in consumed.as_bytes() {
+            if *c == b'\n' {
+                self.loc.next_row();
+            } else {
+                self.loc.next_col();
+            }
+        }
     }
 
     fn skip_whitespace(&mut self) {
@@ -92,77 +110,91 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_ident(&self) -> Option<Token<'a>> {
-        if !self.peek().is_ascii_lowercase() {
+        if !self.peek().is_ascii_alphabetic() {
             return None;
         }
 
-        let len = self.count_while(|&c| c.is_ascii_digit() || c.is_ascii_lowercase() || c == '_');
+        let len = self.count_while(|&c| c.is_ascii_digit() || c.is_ascii_alphabetic() || c == '_');
         Some(self.new_token(len, TokenKind::Ident))
     }
 
     fn lex_keyword(&self) -> Option<Token<'a>> {
         use TokenKind::*;
-        const KEYWORDS: &[(&str, TokenKind)] = &[
-            ("QUOSHUNT OF", Quoshunt),
-            ("PRODUKT OF", Produkt),
-            ("BOTH SAEM", BothSaem),
-            ("SMALLR OF", Smallr),
-            ("EITHER OF", Either),
-            ("DIFFRINT", Diffrint),
-            ("BIGGR OF", Biggr),
-            ("KTHXBYE", KThxBye),
-            ("DIFF OF", Diff),
-            ("BOTH OF", Both),
-            ("WON OF", Won),
-            ("SMOOSH", Smoosh),
-            ("MOD OF", Mod),
-            ("SUM OF", Sum),
-            ("ALL OF", All),
-            ("ANY OF", Any),
-            ("HAS A", HasA),
-            ("MKAY", Mkay),
-            ("HAI", Hai),
-            ("ITZ", Itz),
-            ("SRS", Srs),
-            ("NOT", Not),
-            ("AN", An),
-            ("IT", It),
-            ("I", I),
+        let keywords = BTreeMap::from([
             ("A", A),
-            ("R", R),
+            ("ALL OF", AllOf),
+            ("AN", An),
+            ("ANY OF", AnyOf),
+            ("AN YR", AnYr),
+            ("BIGGR OF", BiggrOf),
+            ("BOTH OF", BothOf),
+            ("BOTH SAEM", BothSaem),
+            ("BUKKIT", Bukkit),
+            ("CAN HAS", CanHas),
             (",", Comma),
-        ];
+            ("DIFF OF", DiffOf),
+            ("DIFFRINT", Diffrint),
+            ("EITHER OF", EitherOf),
+            ("FAIL", Fail),
+            ("FOUND YR", FoundYr),
+            ("GIMMEH", Gimmeh),
+            ("GTFO", Gtfo),
+            ("HAI", Hai),
+            ("HAS A", HasA),
+            ("HOW IZ", HowIz),
+            ("I DUZ", IDuz),
+            ("IF U SAY SO", IfUSaySo),
+            ("IM IN YR", ImInYr),
+            ("IM LIEK", ImLiek),
+            ("IM OUTTA YR", ImOuttaYr),
+            ("INVISIBLE", Invisible),
+            ("IS NOW A", IsNowA),
+            ("IT", It),
+            ("ITZ A", ItzA),
+            ("ITZ", Itz),
+            ("ITZ LIEK A", ItzLiekA),
+            ("IZ", Iz),
+            ("KTHXBYE", KThxBye),
+            ("KTHX", KThx),
+            ("MAEK", Maek),
+            ("MEBBE", Mebbe),
+            ("MKAY", Mkay),
+            ("MOD OF", ModOf),
+            ("NERFIN", Nerfin),
+            ("NOOB", Noob),
+            ("NOT", Not),
+            ("NO WAI", NoWai),
+            ("NUMBAR", Numbar),
+            ("NUMBR", Numbr),
+            ("O HAI IM", OHaiIm),
+            ("OIC", Oic),
+            ("OMG", Omg),
+            ("OMG WTF", OmgWtf),
+            ("O RLY?", ORly),
+            ("PRODUKT OF", ProduktOf),
+            ("QUOSHUNT OF", QuoshuntOf),
+            ("R", R),
+            ("SMALLR OF", SmallrOf),
+            ("SMOOSH", Smoosh),
+            ("SRS", Srs),
+            ("SUM OF", SumOf),
+            ("TIL", Til),
+            ("TROOF", Troof),
+            ("UPPIN", Uppin),
+            ("VISIBLE", Visible),
+            ("WILE", Wile),
+            ("WIN", Win),
+            ("WON OF", WonOf),
+            ("WTF?", Wtf),
+            ("YA RLY", YaRly),
+            ("YARN", Yarn),
+            ("YR", Yr),
+            ("'Z", ApostZ),
+        ]);
 
-        KEYWORDS.iter().find_map(|(keyword, kind)| {
+        keywords.iter().rev().find_map(|(keyword, kind)| {
             self.starts_with(keyword)
                 .then(|| self.new_token(keyword.len(), *kind))
-        })
-    }
-
-    fn lex_type(&self) -> Option<Token<'a>> {
-        use TokenKind::*;
-        const TYPES: &[(&str, TokenKind)] = &[
-            ("NOOB", Noob),
-            ("TROOF", Troof),
-            ("NUMBR", Numbr),
-            ("NUMBAR", Numbar),
-            ("YARN", Yarn),
-            ("BUKKIT", Bukkit),
-        ];
-
-        TYPES.iter().find_map(|(typ, kind)| {
-            self.starts_with(typ)
-                .then(|| self.new_token(typ.len(), *kind))
-        })
-    }
-
-    fn lex_bool_lit(&self) -> Option<Token<'a>> {
-        use TokenKind::*;
-        const LITS: &[(&str, TokenKind)] = &[("WIN", Win), ("FAIL", Fail)];
-
-        LITS.iter().find_map(|(lit, kind)| {
-            self.starts_with(lit)
-                .then(|| self.new_token(lit.len(), *kind))
         })
     }
 
@@ -239,7 +271,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn new_token(&self, len: usize, kind: TokenKind) -> Token<'a> {
-        Token::new(kind, &self.input[..len])
+        Token::new(kind, &self.input[..len], self.loc.clone())
     }
 }
 
@@ -248,7 +280,7 @@ impl<'a> Iterator for Lexer<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let tkn = self.next_token();
-        if [TokenKind::Invalid, TokenKind::Eof].contains(&tkn.kind()) {
+        if [TokenKind::Invalid, TokenKind::Eof].contains(&tkn.kind) {
             None
         } else {
             Some(tkn)
@@ -264,25 +296,26 @@ mod tests {
 
     #[test]
     pub fn keywords() {
-        let input = "HAI I HAS A KTHXBYE ITZ A SRS EITHER OF BOTH OF NOT WON OF ANY OF ALL OF DIFFRINT";
+        let input = "HAI I HAS A KTHXBYE ITZ ITZ A A SRS EITHER OF BOTH OF NOT WON OF ANY OF ALL OF DIFFRINT";
         let tkns = lex(input);
         assert_eq!(
             tkns,
             vec![
-                Token::new(Hai, "HAI"),
-                Token::new(I, "I"),
-                Token::new(HasA, "HAS A"),
-                Token::new(KThxBye, "KTHXBYE"),
-                Token::new(Itz, "ITZ"),
-                Token::new(A, "A"),
-                Token::new(Srs, "SRS"),
-                Token::new(Either, "EITHER OF"),
-                Token::new(Both, "BOTH OF"),
-                Token::new(Not, "NOT"),
-                Token::new(Won, "WON OF"),
-                Token::new(Any, "ANY OF"),
-                Token::new(All, "ALL OF"),
-                Token::new(Diffrint, "DIFFRINT"),
+                token(Hai, "HAI"),
+                token(Ident, "I"),
+                token(HasA, "HAS A"),
+                token(KThxBye, "KTHXBYE"),
+                token(Itz, "ITZ"),
+                token(ItzA, "ITZ A"),
+                token(A, "A"),
+                token(Srs, "SRS"),
+                token(EitherOf, "EITHER OF"),
+                token(BothOf, "BOTH OF"),
+                token(Not, "NOT"),
+                token(WonOf, "WON OF"),
+                token(AnyOf, "ANY OF"),
+                token(AllOf, "ALL OF"),
+                token(Diffrint, "DIFFRINT"),
             ]
         )
     }
@@ -294,12 +327,12 @@ mod tests {
         assert_eq!(
             tkns,
             vec![
-                Token::new(Noob, "NOOB"),
-                Token::new(Troof, "TROOF"),
-                Token::new(Numbr, "NUMBR"),
-                Token::new(Numbar, "NUMBAR"),
-                Token::new(Yarn, "YARN"),
-                Token::new(Bukkit, "BUKKIT"),
+                token(Noob, "NOOB"),
+                token(Troof, "TROOF"),
+                token(Numbr, "NUMBR"),
+                token(Numbar, "NUMBAR"),
+                token(Yarn, "YARN"),
+                token(Bukkit, "BUKKIT"),
             ]
         )
     }
@@ -311,13 +344,13 @@ mod tests {
         assert_eq!(
             tkns,
             vec![
-                Token::new(TokenKind::Win, "WIN"),
-                Token::new(TokenKind::Fail, "FAIL"),
-                Token::new(TokenKind::IntLit, "209348"),
-                Token::new(TokenKind::IntLit, "-2948"),
-                Token::new(TokenKind::FloatLit, "0.234"),
-                Token::new(TokenKind::FloatLit, "-1234234.3"),
-                Token::new(TokenKind::StringLit, "\"hello :\"world:\"\""),
+                token(TokenKind::Win, "WIN"),
+                token(TokenKind::Fail, "FAIL"),
+                token(TokenKind::IntLit, "209348"),
+                token(TokenKind::IntLit, "-2948"),
+                token(TokenKind::FloatLit, "0.234"),
+                token(TokenKind::FloatLit, "-1234234.3"),
+                token(TokenKind::StringLit, "\"hello :\"world:\"\""),
             ]
         )
     }
@@ -329,8 +362,8 @@ mod tests {
         assert_eq!(
             tkns,
             vec![
-                Token::new(TokenKind::NewLine, "\n"),
-                Token::new(TokenKind::FloatLit, "-1234234.3"),
+                token(TokenKind::NewLine, "\n"),
+                token(TokenKind::FloatLit, "-1234234.3"),
             ]
         )
     }
@@ -341,10 +374,7 @@ mod tests {
         let tkns = lex(input);
         assert_eq!(
             tkns,
-            vec![
-                Token::new(TokenKind::Win, "WIN"),
-                Token::new(TokenKind::Fail, "FAIL"),
-            ]
+            vec![token(TokenKind::Win, "WIN"), token(TokenKind::Fail, "FAIL"),]
         )
     }
 
@@ -355,19 +385,23 @@ mod tests {
         assert_eq!(
             tkns,
             vec![
-                Token::new(TokenKind::An, "AN"),
-                Token::new(TokenKind::Sum, "SUM OF"),
-                Token::new(TokenKind::Diff, "DIFF OF"),
-                Token::new(TokenKind::Produkt, "PRODUKT OF"),
-                Token::new(TokenKind::Quoshunt, "QUOSHUNT OF"),
-                Token::new(TokenKind::Mod, "MOD OF"),
-                Token::new(TokenKind::Biggr, "BIGGR OF"),
-                Token::new(TokenKind::Smallr, "SMALLR OF"),
+                token(TokenKind::An, "AN"),
+                token(TokenKind::SumOf, "SUM OF"),
+                token(TokenKind::DiffOf, "DIFF OF"),
+                token(TokenKind::ProduktOf, "PRODUKT OF"),
+                token(TokenKind::QuoshuntOf, "QUOSHUNT OF"),
+                token(TokenKind::ModOf, "MOD OF"),
+                token(TokenKind::BiggrOf, "BIGGR OF"),
+                token(TokenKind::SmallrOf, "SMALLR OF"),
             ]
         )
     }
 
+    fn token(kind: TokenKind, text: &'static str) -> Token<'static> {
+        Token::new(kind, text, Loc::new(""))
+    }
+
     fn lex(input: &'static str) -> Vec<Token<'static>> {
-        Lexer::new(input).collect()
+        Lexer::new(input, "").collect()
     }
 }
