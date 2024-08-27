@@ -1,3 +1,4 @@
+use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
 
 use crate::ast::*;
@@ -536,8 +537,8 @@ impl<'a> Parser<'a> {
                 loc: tkn.loc,
                 value,
             }),
-            Err(_err) => {
-                // TODO: report error
+            Err(err) => {
+                self.error(ErrorKind::ParseIntError(err));
                 None
             }
         }
@@ -550,8 +551,8 @@ impl<'a> Parser<'a> {
                 loc: tkn.loc,
                 value,
             }),
-            Err(_err) => {
-                // TODO: report error
+            Err(err) => {
+                self.error(ErrorKind::ParseFloatError(err));
                 None
             }
         }
@@ -788,6 +789,12 @@ pub enum ErrorKind {
 
     #[error("loop name doesn't match:\n\t{}: {}\n\t{}: {}", .begin.loc(), .begin, .end.loc(), .end)]
     DifferentLoopNames { begin: Ident, end: Ident },
+
+    #[error(transparent)]
+    ParseIntError(ParseIntError),
+
+    #[error(transparent)]
+    ParseFloatError(ParseFloatError),
 }
 
 fn expected_one_of_msg(expected: &[TokenKind], got: &TokenKind) -> String {
