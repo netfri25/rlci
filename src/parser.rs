@@ -1,5 +1,6 @@
 use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::ast::*;
 use crate::lexer::Lexer;
@@ -379,7 +380,7 @@ impl<'a> Parser<'a> {
         };
 
         self.parse_seperator()?;
-        let block = self.parse_block()?;
+        let block = Arc::new(self.parse_block()?);
         self.expect(TokenKind::IfUSaySo)?;
 
         Some(FuncDef {

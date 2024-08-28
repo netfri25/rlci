@@ -96,8 +96,16 @@ impl ObjectValue {
         Self::Yarn("".into())
     }
 
-    pub fn default_bukkit(scope: SharedScope) -> Self {
-        Self::Bukkit(Bukkit::new(scope))
+    pub fn default_bukkit(parent: SharedScope) -> Self {
+        Self::Bukkit(Bukkit::new(parent))
+    }
+
+    pub fn default_funkshun(scope: SharedScope) -> Self {
+        Self::Funkshun(Funkshun {
+            scope,
+            args: Default::default(),
+            block: Default::default(),
+        })
     }
 
     pub fn as_noob(&self) -> Option<()> {
@@ -246,5 +254,5 @@ pub struct Funkshun {
     // the scope where the funkshun is defined is the parent scope
     pub scope: SharedScope,
     pub args: Vec<FuncArg>,
-    pub block: Block,
+    pub block: Arc<Block>,
 }

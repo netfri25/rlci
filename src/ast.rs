@@ -2,6 +2,7 @@ use derive_more::Display;
 use diff_enum::common_fields;
 
 use std::fmt;
+use std::sync::Arc;
 
 use crate::token::Loc;
 
@@ -293,7 +294,7 @@ pub struct FuncDef {
     pub scope: Ident,
     pub name: Ident,
     pub args: Vec<FuncArg>,
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
 pub type FuncArg = Ident;

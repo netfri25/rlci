@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::object::{Funkshun, Object, ObjectType, ObjectValue};
+use crate::object::{Bukkit, Funkshun, Object, ObjectType, ObjectValue};
 use crate::token::Loc;
 use crate::{ast::*, parser, scope};
 
@@ -36,12 +36,12 @@ impl Interpreter {
             Stmt::Print(print) => self.eval_print(print, scope),
             Stmt::Input(input) => self.eval_input(input, scope),
             Stmt::Assign(assign) => self.eval_assign(assign, scope),
-            Stmt::Declare(_) => todo!(),
-            Stmt::Cond(_) => todo!(),
+            Stmt::Declare(declare) => self.eval_declare(declare, scope),
+            Stmt::Cond(cond) => self.eval_cond(cond, scope),
             Stmt::Switch(_) => todo!(),
             Stmt::Loop(looop) => self.eval_loop(looop, scope),
             Stmt::FuncDef(func_def) => self.eval_func_def(func_def, scope),
-            Stmt::ObjectDef(_) => todo!(),
+            Stmt::ObjectDef(object_def) => self.eval_object_def(object_def, scope),
             Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it_ref(obj)),
             Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
             Stmt::Return(Return { loc, expr }) => {
@@ -87,22 +87,70 @@ impl Interpreter {
     pub fn eval_assign(&mut self, assign: &Assign, scope: &SharedScope) -> Result<(), Error> {
         let name = self.eval_ident_name(&assign.target, scope)?;
         let value = self.eval_expr(&assign.expr, scope)?;
+        let get = value.get();
         scope
-            .assign_ref(&name, value)
+            .assign_value(&name, get.clone())
             .map_err(|err| Error::Scope(assign.loc.clone(), err))
     }
 
+    pub fn eval_declare(&mut self, declare: &Declare, scope: &SharedScope) -> Result<(), Error> {
+        let define_scope = &self.eval_scope(&declare.scope, scope)?;
+        let name = self.eval_ident_name(&declare.name, scope)?;
+        let object = match &declare.init {
+            None => Object::new(ObjectValue::default_noob()),
+            Some(Init::Expr { expr, .. }) => Object::new(self.eval_expr(expr, scope)?.get().clone()),
+            Some(Init::Type { typ, .. }) => match typ {
+                Type::Noob { .. } => Object::new(ObjectValue::default_noob()),
+                Type::Troof { .. } => Object::new(ObjectValue::default_troof()),
+                Type::Numbr { .. } => Object::new(ObjectValue::default_numbr()),
+                Type::Numbar { .. } => Object::new(ObjectValue::default_numbar()),
+                Type::Yarn { .. } => Object::new(ObjectValue::default_yarn()),
+                Type::Bukkit { .. } => Object::new(ObjectValue::default_bukkit(scope.clone())),
+                Type::Funkshun { .. } => Object::new(ObjectValue::default_funkshun(scope.clone())),
+            },
+            Some(Init::Like { .. }) => todo!("LIEK"),
+        };
+
+        define_scope
+            .define(name, object)
+            .map_err(|err| Error::Scope(declare.loc.clone(), err))
+    }
+
+    pub fn eval_cond(&mut self, cond: &Cond, scope: &SharedScope) -> Result<(), Error> {
+        let it = scope.get_it();
+        let condition = self.cast_bool(cond.loc.clone(), &it.get())?;
+
+        if condition {
+            return self.eval_block(&cond.then, scope);
+        }
+
+        for else_if in cond.else_if.iter() {
+            let object = self.eval_expr(&else_if.cond, scope)?;
+            let condition = self.cast_bool(else_if.loc.clone(), &object.get())?;
+            if condition {
+                return self.eval_block(&else_if.then, scope);
+            }
+        }
+
+        if let Some(otherwise) = &cond.otherwise {
+            return self.eval_block(&otherwise.block, scope);
+        }
+
+        Ok(())
+    }
+
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
-        let scope = &SharedScope::new(Some(scope.clone()));
+        let loop_scope = &SharedScope::new(Some(scope.clone()));
         if let Some(var) = looop.var() {
             let name = self.eval_ident_name(var, scope)?;
             let value = Object::new(ObjectValue::default_numbr());
-            scope
+            loop_scope
                 .define(name, value)
                 .map_err(|err| Error::Scope(var.loc().clone(), err))?;
         };
 
         loop {
+            let scope = &SharedScope::new(Some(loop_scope.clone()));
             if let Some(ref guard) = looop.guard {
                 let cond = self.eval_expr(guard.cond(), scope)?;
                 let troof = self.cast_bool(guard.cond().loc().clone(), &cond.get())?;
@@ -177,6 +225,27 @@ impl Interpreter {
             .map_err(|err| Error::Scope(func_def.loc.clone(), err))
     }
 
+    pub fn eval_object_def(
+        &mut self,
+        object_def: &ObjectDef,
+        scope: &SharedScope,
+    ) -> Result<(), Error> {
+        let name = self.eval_ident_name(&object_def.name, scope)?;
+        let bukkit = Bukkit::new(scope.clone());
+        let object_scope = bukkit.scope().clone();
+        let object = Object::new(ObjectValue::Bukkit(bukkit));
+        scope
+            .define(name, object.clone())
+            .map_err(|err| Error::Scope(object_def.loc.clone(), err))?;
+
+        object_scope
+            .define("ME".into(), object.clone())
+            .map_err(|err| Error::Scope(object_def.loc.clone(), err))?;
+
+        // TODO: inherit
+        self.eval_block(&object_def.block, &object_scope)
+    }
+
     pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
         match expr {
             Expr::Cast(_) => todo!(),
@@ -209,24 +278,42 @@ impl Interpreter {
                 .eval_expr(expr, scope)
                 .and_then(|obj| self.cast_string(loc.clone(), &obj.get())),
             Ident::Access { parent, slot, loc } => {
-                let parent_name = self.eval_ident_name(parent, scope)?;
-                let parent_object = self.eval_ident(parent, scope)?;
-                let ObjectValue::Bukkit(ref parent_bukkit) = *parent_object.get() else {
-                    return Err(Error::NotABukkit(parent.loc().clone(), parent_name));
-                };
+                self.eval_ident_name(slot, scope)
+                // let parent_name = self.eval_ident_name(parent, scope)?;
+                // let parent_object = self.eval_ident(parent, scope)?;
+                // let ObjectValue::Bukkit(ref parent_bukkit) = *parent_object.get() else {
+                //     return Err(Error::NotABukkit(parent.loc().clone(), parent_name));
+                // };
 
-                let slot_object = self.eval_ident(slot, parent_bukkit.scope())?;
-                let slot_value = slot_object.get();
-                self.cast_string(loc.clone(), &slot_value)
+                // let slot_object = self.eval_ident(slot, parent_bukkit.scope())?;
+                // let slot_value = slot_object.get();
+                // self.cast_string(loc.clone(), &slot_value)
             }
         }
     }
 
     pub fn eval_ident(&mut self, ident: &Ident, scope: &SharedScope) -> Result<Object, Error> {
-        let name = self.eval_ident_name(ident, scope)?;
-        scope
-            .get(&name)
-            .map_err(|err| Error::Scope(ident.loc().clone(), err))
+        fn eval_ident_help(me: &mut Interpreter, ident: &Ident, start_scope: &SharedScope, scope: &SharedScope) -> Result<Object, Error> {
+            let name = match ident {
+                Ident::Lit { name, .. } => name.to_string(),
+                Ident::Srs { expr, loc } => {
+                    let object = me.eval_expr(expr, start_scope)?;
+                    // dbg!(expr, &object);
+                    let get = object.get();
+                    me.cast_string(loc.clone(), &get)?
+                }
+                Ident::Access { parent, slot, .. } => {
+                    let parent_scope = me.eval_scope(parent, scope)?;
+                    return eval_ident_help(me, slot, start_scope, &parent_scope);
+                }
+            };
+
+            scope
+                .get(&name)
+                .map_err(|err| Error::Scope(ident.loc().clone(), err))
+        }
+
+        eval_ident_help(self, ident, scope, scope)
     }
 
     pub fn eval_scope(
@@ -272,7 +359,7 @@ impl Interpreter {
             });
         }
 
-        let scope = &func.scope.clone_inner();
+        let scope = SharedScope::new(Some(func.scope.clone()));
         for (ident, expr) in func.args.iter().zip(params) {
             let name = self.eval_ident_name(ident, outer_scope)?;
             let object = self.eval_expr(expr, outer_scope)?;
@@ -281,7 +368,7 @@ impl Interpreter {
                 .map_err(|err| Error::Scope(ident.loc().clone(), err))?;
         }
 
-        match self.eval_block(&func.block, scope) {
+        match self.eval_block(&func.block, &scope) {
             Err(Error::Break(..)) => Ok(Object::new(ObjectValue::Noob)),
             Err(Error::Return(_, value)) => Ok(value),
             Err(err) => Err(err),
@@ -553,8 +640,8 @@ impl Interpreter {
         let res = match value {
             ObjectValue::Noob => false,
             &ObjectValue::Troof(value) => value,
-            &ObjectValue::Numbr(value) => value == 0,
-            &ObjectValue::Numbar(value) => value == 0.,
+            &ObjectValue::Numbr(value) => value != 0,
+            &ObjectValue::Numbar(value) => value != 0.,
             ObjectValue::Yarn(value) => !value.is_empty(),
             _ => {
                 return Err(Error::CantCast {
@@ -641,6 +728,9 @@ pub enum Error {
         lhs: ObjectType,
         rhs: ObjectType,
     },
+
+    #[error("{0}: no parent in the current scope")]
+    NoParent(Loc),
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {
