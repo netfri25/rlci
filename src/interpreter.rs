@@ -227,17 +227,32 @@ impl Interpreter {
         scope_ident: &Ident,
         name: &Ident,
         params: &[Expr],
-        scope: &SharedScope,
+        outer_scope: &SharedScope,
     ) -> Result<Object, Error> {
-        let scope = self.eval_scope(scope_ident, scope)?;
+        let scope = self.eval_scope(scope_ident, outer_scope)?;
         let func_name = self.eval_ident_name(name, &scope)?;
         let func_object = self.eval_ident(name, &scope)?;
         let ObjectValue::Funkshun(ref func) = *func_object.get() else {
             return Err(Error::NotCallable(name.loc().clone(), func_name));
         };
 
-        // TODO: set the parameters, and report invalid amount of args
+        if func.args.len() != params.len() {
+            return Err(Error::UnexpectedAmountOfParams {
+                loc: loc.clone(),
+                required: func.args.len(),
+                given: params.len(),
+            });
+        }
+
         let scope = &func.scope;
+        for (ident, expr) in func.args.iter().zip(params) {
+            let name = self.eval_ident_name(ident, outer_scope)?;
+            let object = self.eval_expr(expr, outer_scope)?;
+            scope
+                .define(name, object)
+                .map_err(|err| Error::Scope(ident.loc().clone(), err))?;
+        }
+
         for stmt in &func.block {
             match self.eval_stmt(stmt, scope) {
                 Err(Error::Break(..)) => return Ok(Object::new(ObjectValue::Noob)),
@@ -324,6 +339,13 @@ pub enum Error {
 
     #[error("{0}: loop variable `{1}` is not a NUMBR")]
     LoopVarNotNumbr(Loc, String),
+
+    #[error("{loc}: unexpected amount of parameters, expected {required} but got {given}")]
+    UnexpectedAmountOfParams {
+        loc: Loc,
+        required: usize,
+        given: usize,
+    },
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {

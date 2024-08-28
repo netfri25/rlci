@@ -411,9 +411,9 @@ impl<'a> Parser<'a> {
             TokenKind::AnYr
         };
 
-        let loc = self.expect(expected)?.loc;
+        self.expect(expected)?;
         let name = self.parse_ident()?;
-        Some(FuncArg { loc, name })
+        Some(name)
     }
 
     fn parse_object_def_stmt(&mut self) -> Option<ObjectDef> {

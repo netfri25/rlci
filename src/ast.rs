@@ -294,12 +294,7 @@ pub struct FuncDef {
     pub block: Block,
 }
 
-#[derive(Debug, Display, Clone, PartialEq)]
-#[display("{name}")]
-pub struct FuncArg {
-    pub loc: Loc,
-    pub name: Ident,
-}
+pub type FuncArg = Ident;
 
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display("O HAI IM {name}{}\n{}\nKTHX", inherit.as_ref().map(|x| format!(" IM LIEK {}", x)).unwrap_or_default(), indent(display_newline(block)))]
