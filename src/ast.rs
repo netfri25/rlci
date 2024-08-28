@@ -430,7 +430,7 @@ pub struct BinaryOp {
     pub rhs: Box<Expr>,
 }
 
-#[derive(Debug, Display, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, Copy, PartialEq)]
 pub enum BinaryOpKind {
     #[display("SUM OF")]
     Add,

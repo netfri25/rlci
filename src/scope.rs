@@ -7,6 +7,10 @@ use crate::object::{Object, ObjectValue};
 pub struct SharedScope(Arc<RwLock<Scope>>);
 
 impl SharedScope {
+    pub fn clone_inner(&self) -> Self {
+        Self(Arc::new(RwLock::new(self.0.read().unwrap().clone())))
+    }
+
     pub fn new(parent: Option<SharedScope>) -> Self {
         Self(Arc::new(RwLock::new(Scope::new(parent))))
     }

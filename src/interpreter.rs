@@ -194,8 +194,8 @@ impl Interpreter {
                 name,
                 params,
             }) => self.eval_func_call(loc, scope_ident, name, params, scope),
-            Expr::UnaryOp(_) => todo!(),
-            Expr::BinaryOp(_) => todo!(),
+            Expr::UnaryOp(unary_op) => self.eval_unary_op(unary_op, scope),
+            Expr::BinaryOp(binary_op) => self.eval_binary_op(binary_op, scope),
             Expr::NaryOp(_) => todo!(),
             Expr::Implicit(_) => todo!(),
             Expr::SystemCmd(_) => todo!(),
@@ -272,7 +272,7 @@ impl Interpreter {
             });
         }
 
-        let scope = &func.scope;
+        let scope = &func.scope.clone_inner();
         for (ident, expr) in func.args.iter().zip(params) {
             let name = self.eval_ident_name(ident, outer_scope)?;
             let object = self.eval_expr(expr, outer_scope)?;
@@ -286,6 +286,241 @@ impl Interpreter {
             Err(Error::Return(_, value)) => Ok(value),
             Err(err) => Err(err),
             Ok(()) => Ok(scope.get_it()),
+        }
+    }
+
+    pub fn eval_unary_op(
+        &mut self,
+        unary_op: &UnaryOp,
+        scope: &SharedScope,
+    ) -> Result<Object, Error> {
+        let value = self.eval_expr(&unary_op.expr, scope)?;
+        match &unary_op.kind {
+            UnaryOpKind::Not => {
+                let value = self.cast_bool(unary_op.loc.clone(), &value.get())?;
+                Ok(Object::new(ObjectValue::Troof(!value)))
+            }
+        }
+    }
+
+    pub fn eval_binary_op(
+        &mut self,
+        binary_op: &BinaryOp,
+        scope: &SharedScope,
+    ) -> Result<Object, Error> {
+        let lhs = self.eval_expr(&binary_op.lhs, scope)?;
+        let rhs = self.eval_expr(&binary_op.rhs, scope)?;
+
+        let is_lhs_float = lhs.get().is_numbar();
+        let is_lhs_num = is_lhs_float || lhs.get().is_numbr();
+
+        let is_rhs_float = rhs.get().is_numbar();
+        let is_rhs_num = is_rhs_float || rhs.get().is_numbr();
+
+        let loc = binary_op.loc.clone();
+        let kind = binary_op.kind;
+
+        match kind {
+            BinaryOpKind::Add => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.get().typ(),
+                        rhs: rhs.get().typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
+                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
+                    Ok(Object::new(ObjectValue::Numbar(lhs + rhs)))
+                } else {
+                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::new(ObjectValue::Numbr(lhs + rhs)))
+                }
+            }
+
+            BinaryOpKind::Sub => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.get().typ(),
+                        rhs: rhs.get().typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
+                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
+                    Ok(Object::new(ObjectValue::Numbar(lhs - rhs)))
+                } else {
+                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::new(ObjectValue::Numbr(lhs - rhs)))
+                }
+            }
+
+            BinaryOpKind::Mul => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.get().typ(),
+                        rhs: rhs.get().typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
+                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
+                    Ok(Object::new(ObjectValue::Numbar(lhs * rhs)))
+                } else {
+                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::new(ObjectValue::Numbr(lhs * rhs)))
+                }
+            }
+
+            BinaryOpKind::Div => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.get().typ(),
+                        rhs: rhs.get().typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
+                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
+                    Ok(Object::new(ObjectValue::Numbar(lhs / rhs)))
+                } else {
+                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::new(ObjectValue::Numbr(lhs / rhs)))
+                }
+            }
+
+            BinaryOpKind::Mod => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.get().typ(),
+                        rhs: rhs.get().typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
+                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
+                    Ok(Object::new(ObjectValue::Numbar(lhs % rhs)))
+                } else {
+                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::new(ObjectValue::Numbr(lhs % rhs)))
+                }
+            }
+
+            BinaryOpKind::Max => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.get().typ(),
+                        rhs: rhs.get().typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
+                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
+                    Ok(Object::new(ObjectValue::Numbar(lhs.max(rhs))))
+                } else {
+                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::new(ObjectValue::Numbr(lhs.max(rhs))))
+                }
+            }
+
+            BinaryOpKind::Min => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.get().typ(),
+                        rhs: rhs.get().typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
+                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
+                    Ok(Object::new(ObjectValue::Numbar(lhs.min(rhs))))
+                } else {
+                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::new(ObjectValue::Numbr(lhs.min(rhs))))
+                }
+            }
+
+            BinaryOpKind::And => {
+                let lhs = self.cast_bool(loc.clone(), &lhs.get())?;
+                let rhs = self.cast_bool(loc.clone(), &rhs.get())?;
+                Ok(Object::new(ObjectValue::Troof(lhs && rhs)))
+            }
+
+            BinaryOpKind::Or => {
+                let lhs = self.cast_bool(loc.clone(), &lhs.get())?;
+                let rhs = self.cast_bool(loc.clone(), &rhs.get())?;
+                Ok(Object::new(ObjectValue::Troof(lhs || rhs)))
+            }
+
+            BinaryOpKind::Xor => {
+                let lhs = self.cast_bool(loc.clone(), &lhs.get())?;
+                let rhs = self.cast_bool(loc.clone(), &rhs.get())?;
+                Ok(Object::new(ObjectValue::Troof(lhs ^ rhs)))
+            }
+
+            BinaryOpKind::Eq => Ok(Object::new(ObjectValue::Troof(
+                match (&*lhs.get(), &*rhs.get()) {
+                    (ObjectValue::Noob, ObjectValue::Noob) => true,
+                    (ObjectValue::Numbr(x), ObjectValue::Numbr(y)) => x == y,
+                    (ObjectValue::Numbar(x), ObjectValue::Numbar(y)) => x == y,
+                    (ObjectValue::Troof(x), ObjectValue::Troof(y)) => x == y,
+                    (ObjectValue::Yarn(x), ObjectValue::Yarn(y)) => x == y,
+                    _ => {
+                        return Err(Error::CantApplyBinaryOp {
+                            loc,
+                            kind,
+                            lhs: lhs.get().typ(),
+                            rhs: rhs.get().typ(),
+                        })
+                    }
+                },
+            ))),
+
+            BinaryOpKind::NotEq => Ok(Object::new(ObjectValue::Troof(
+                match (&*lhs.get(), &*rhs.get()) {
+                    (ObjectValue::Noob, ObjectValue::Noob) => false,
+                    (ObjectValue::Numbr(x), ObjectValue::Numbr(y)) => x != y,
+                    (ObjectValue::Numbar(x), ObjectValue::Numbar(y)) => x != y,
+                    (ObjectValue::Troof(x), ObjectValue::Troof(y)) => x != y,
+                    (ObjectValue::Yarn(x), ObjectValue::Yarn(y)) => x != y,
+                    _ => {
+                        return Err(Error::CantApplyBinaryOp {
+                            loc,
+                            kind,
+                            lhs: lhs.get().typ(),
+                            rhs: rhs.get().typ(),
+                        })
+                    }
+                },
+            ))),
         }
     }
 
@@ -326,6 +561,22 @@ impl Interpreter {
                     loc,
                     src: value.typ(),
                     dst: ObjectType::Troof,
+                })
+            }
+        };
+
+        Ok(res)
+    }
+
+    pub fn cast_float(&mut self, loc: Loc, value: &ObjectValue) -> Result<f64, Error> {
+        let res = match *value {
+            ObjectValue::Numbr(value) => value as f64,
+            ObjectValue::Numbar(value) => value,
+            _ => {
+                return Err(Error::CantCast {
+                    loc,
+                    src: value.typ(),
+                    dst: ObjectType::Numbar,
                 })
             }
         };
@@ -381,6 +632,14 @@ pub enum Error {
         loc: Loc,
         required: usize,
         given: usize,
+    },
+
+    #[error("{loc}: can't apply `{kind}` to `{lhs}` and `{rhs}`")]
+    CantApplyBinaryOp {
+        loc: Loc,
+        kind: BinaryOpKind,
+        lhs: ObjectType,
+        rhs: ObjectType,
     },
 }
 
