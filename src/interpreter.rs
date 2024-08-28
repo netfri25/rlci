@@ -72,10 +72,16 @@ impl Interpreter {
                 loc: input.loc.clone(),
                 reason: err.kind(),
             })?;
+        let line = line.trim_end_matches('\n').to_string();
 
-        scope
-            .assign_value(&name, ObjectValue::Yarn(line))
-            .map_err(|err| Error::Scope(input.target.loc().clone(), err))
+        let value = ObjectValue::Yarn(line);
+        let res = if scope.is_defined(&name) {
+            scope.assign_value(&name, value)
+        } else {
+            scope.define(name, Object::new(value))
+        };
+
+        res.map_err(|err| Error::Scope(input.target.loc().clone(), err))
     }
 
     pub fn eval_assign(&mut self, assign: &Assign, scope: &SharedScope) -> Result<(), Error> {

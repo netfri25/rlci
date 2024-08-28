@@ -37,7 +37,10 @@ fn main() {
     match ops.action {
         Action::Lex => lex(&path),
         Action::Parse => parse(&path),
-        Action::Run => drop(Interpreter.eval_file(&path)),
+        Action::Run => Interpreter
+            .eval_file(&path)
+            .map(drop)
+            .unwrap_or_else(|err| eprintln!("[ERROR] {}", err)),
     }
 }
 

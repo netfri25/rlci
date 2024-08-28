@@ -19,6 +19,10 @@ impl SharedScope {
         self.0.write().unwrap().define(name, value)
     }
 
+    pub fn is_defined(&self, name: &str) -> bool {
+        self.0.read().unwrap().is_defined(name)
+    }
+
     pub fn get(&self, name: &str) -> Result<Object, Error> {
         self.0.read().unwrap().get(name)
     }
@@ -65,6 +69,10 @@ impl Scope {
 
         self.vars.insert(name, value);
         Ok(())
+    }
+
+    pub fn is_defined(&self, name: &str) -> bool {
+        self.vars.contains_key(name) || self.parent.as_ref().is_some_and(|parent| parent.is_defined(name))
     }
 
     pub fn get(&self, name: &str) -> Result<Object, Error> {
