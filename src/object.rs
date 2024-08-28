@@ -1,3 +1,5 @@
+use derive_more::Display;
+
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
@@ -25,6 +27,30 @@ impl Object {
     }
 }
 
+#[derive(Debug, Clone, Copy, Display)]
+pub enum ObjectType {
+    #[display("NOOB")]
+    Noob,
+
+    #[display("TROOF")]
+    Troof,
+
+    #[display("NUMBR")]
+    Numbr,
+
+    #[display("NUMBAR")]
+    Numbar,
+
+    #[display("YARN")]
+    Yarn,
+
+    #[display("BUKKIT")]
+    Bukkit,
+
+    #[display("FUNKSHUN")]
+    Funkshun,
+}
+
 #[derive(Debug, Clone, Default)]
 pub enum ObjectValue {
     #[default]
@@ -38,6 +64,18 @@ pub enum ObjectValue {
 }
 
 impl ObjectValue {
+    pub fn typ(&self) -> ObjectType {
+        match self {
+            Self::Noob => ObjectType::Noob,
+            Self::Troof(..) => ObjectType::Troof,
+            Self::Numbr(..) => ObjectType::Numbr,
+            Self::Numbar(..) => ObjectType::Numbar,
+            Self::Yarn(..) => ObjectType::Yarn,
+            Self::Bukkit(..) => ObjectType::Bukkit,
+            Self::Funkshun(_) => ObjectType::Funkshun,
+        }
+    }
+
     pub fn default_noob() -> Self {
         Self::Noob
     }

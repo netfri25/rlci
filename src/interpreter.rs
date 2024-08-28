@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::object::{Funkshun, Object, ObjectValue};
+use crate::object::{Funkshun, Object, ObjectType, ObjectValue};
 use crate::token::Loc;
 use crate::{ast::*, parser, scope};
 
@@ -44,7 +44,9 @@ impl Interpreter {
             Stmt::ObjectDef(_) => todo!(),
             Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it_ref(obj)),
             Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
-            Stmt::Return(Return { loc, expr }) => Err(Error::Return(loc.clone(), self.eval_expr(expr, scope)?)),
+            Stmt::Return(Return { loc, expr }) => {
+                Err(Error::Return(loc.clone(), self.eval_expr(expr, scope)?))
+            }
         }
     }
 
@@ -115,8 +117,16 @@ impl Interpreter {
                         func,
                         ..
                     } => {
-                        let value = self.eval_func_call(loc, scope_ident, func, &[Expr::Ident(target.clone())], scope)?;
-                        scope.assign_ref(&name, value).map_err(|err| Error::Scope(loc.clone(), err))?;
+                        let value = self.eval_func_call(
+                            loc,
+                            scope_ident,
+                            func,
+                            &[Expr::Ident(target.clone())],
+                            scope,
+                        )?;
+                        scope
+                            .assign_ref(&name, value)
+                            .map_err(|err| Error::Scope(loc.clone(), err))?;
                     }
                 }
             }
@@ -247,8 +257,13 @@ impl Interpreter {
             ObjectValue::Numbr(x) => x.to_string(),
             ObjectValue::Numbar(x) => x.to_string(),
             ObjectValue::Yarn(x) => x.clone(),
-            ObjectValue::Bukkit(_) => return Err(Error::CantCastBukkitToYarn(loc)),
-            ObjectValue::Funkshun(_) => return Err(Error::CantCastFunkshunToYarn(loc)),
+            _ => {
+                return Err(Error::CantCast {
+                    loc,
+                    src: value.typ(),
+                    dst: ObjectType::Yarn,
+                })
+            }
         };
 
         Ok(res)
@@ -261,8 +276,13 @@ impl Interpreter {
             &ObjectValue::Numbr(value) => value == 0,
             &ObjectValue::Numbar(value) => value == 0.,
             ObjectValue::Yarn(value) => !value.is_empty(),
-            ObjectValue::Bukkit(_) => return Err(Error::CantCastBukkitToTroof(loc)),
-            ObjectValue::Funkshun(_) => return Err(Error::CantCastFunkshunToTroof(loc)),
+            _ => {
+                return Err(Error::CantCast {
+                    loc,
+                    src: value.typ(),
+                    dst: ObjectType::Troof,
+                })
+            }
         };
 
         Ok(res)
@@ -289,17 +309,12 @@ pub enum Error {
     #[error("{0}: can't return from here")]
     Return(Loc, Object),
 
-    #[error("{0}: can't cast BUKKIT to a YARN")]
-    CantCastBukkitToYarn(Loc),
-
-    #[error("{0}: can't cast FUNKSHUN to a YARN")]
-    CantCastFunkshunToYarn(Loc),
-
-    #[error("{0}: can't cast BUKKIT to a TROOF")]
-    CantCastBukkitToTroof(Loc),
-
-    #[error("{0}: can't cast FUNKSHUN to a TROOF")]
-    CantCastFunkshunToTroof(Loc),
+    #[error("{loc}: can't cast {src} to a {dst}")]
+    CantCast {
+        loc: Loc,
+        src: ObjectType,
+        dst: ObjectType,
+    },
 
     #[error("{0}: variable `{1}` is not of type BUKKIT")]
     NotABukkit(Loc, String),
