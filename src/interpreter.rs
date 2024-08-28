@@ -113,12 +113,10 @@ impl Interpreter {
                 }
             };
 
-            for stmt in &looop.block {
-                match self.eval_stmt(stmt, scope) {
-                    Err(Error::Break(..)) => break,
-                    Err(err) => return Err(err),
-                    _ => {}
-                }
+            match self.eval_block(&looop.block, scope) {
+                Err(Error::Break(..)) => break,
+                Err(err) => return Err(err),
+                Ok(()) => {}
             }
 
             if let Some(ref update) = looop.update {
@@ -283,16 +281,18 @@ impl Interpreter {
                 .map_err(|err| Error::Scope(ident.loc().clone(), err))?;
         }
 
-        for stmt in &func.block {
-            match self.eval_stmt(stmt, scope) {
-                Err(Error::Break(..)) => return Ok(Object::new(ObjectValue::Noob)),
-                Err(Error::Return(_, value)) => return Ok(value),
-                Err(err) => return Err(err),
-                _ => {}
-            }
+        match self.eval_block(&func.block, scope) {
+            Err(Error::Break(..)) => Ok(Object::new(ObjectValue::Noob)),
+            Err(Error::Return(_, value)) => Ok(value),
+            Err(err) => Err(err),
+            Ok(()) => Ok(scope.get_it()),
         }
+    }
 
-        Ok(scope.get_it())
+    pub fn eval_block(&mut self, block: &[Stmt], scope: &SharedScope) -> Result<(), Error> {
+        block
+            .iter()
+            .try_for_each(|stmt| self.eval_stmt(stmt, scope))
     }
 
     pub fn cast_string(&mut self, loc: Loc, value: &ObjectValue) -> Result<String, Error> {
