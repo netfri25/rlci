@@ -34,8 +34,8 @@ impl Interpreter {
         match stmt {
             Stmt::Cast(_) => todo!(),
             Stmt::Print(print) => self.eval_print(print, scope),
-            Stmt::Input(_) => todo!(),
-            Stmt::Assign(_) => todo!(),
+            Stmt::Input(input) => self.eval_input(input, scope),
+            Stmt::Assign(assign) => self.eval_assign(assign, scope),
             Stmt::Declare(_) => todo!(),
             Stmt::Cond(_) => todo!(),
             Stmt::Switch(_) => todo!(),
@@ -60,6 +60,30 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    pub fn eval_input(&mut self, input: &Input, scope: &SharedScope) -> Result<(), Error> {
+        let name = self.eval_ident_name(&input.target, scope)?;
+
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .map_err(|err| Error::ReadLine {
+                loc: input.loc.clone(),
+                reason: err.kind(),
+            })?;
+
+        scope
+            .assign_value(&name, ObjectValue::Yarn(line))
+            .map_err(|err| Error::Scope(input.target.loc().clone(), err))
+    }
+
+    pub fn eval_assign(&mut self, assign: &Assign, scope: &SharedScope) -> Result<(), Error> {
+        let name = self.eval_ident_name(&assign.target, scope)?;
+        let value = self.eval_expr(&assign.expr, scope)?;
+        scope
+            .assign_ref(&name, value)
+            .map_err(|err| Error::Scope(assign.loc.clone(), err))
     }
 
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
@@ -158,7 +182,7 @@ impl Interpreter {
             Expr::String(StringLit { value, .. }) => {
                 Ok(Object::new(ObjectValue::Yarn(value.to_string())))
             }
-            Expr::Noob(_) => Ok(Object::new(ObjectValue::Noob)),
+            Expr::Noob(NoobLit { .. }) => Ok(Object::new(ObjectValue::Noob)),
             Expr::Ident(ident) => self.eval_ident(ident, scope),
             Expr::FuncCall(FuncCall {
                 loc,
@@ -309,6 +333,12 @@ pub enum Error {
     #[error("unable to read file `{path}`: `{reason}`")]
     ReadFile {
         path: String,
+        reason: std::io::ErrorKind,
+    },
+
+    #[error("{loc}: unable to read line from user: {reason}")]
+    ReadLine {
+        loc: Loc,
         reason: std::io::ErrorKind,
     },
 
