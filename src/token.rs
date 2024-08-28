@@ -37,12 +37,13 @@ pub enum TokenKind {
 
     ItzLiekA, // object inheritance declaration
 
-    Noob,   // nil type
-    Numbr,  // integer type
-    Numbar, // float type
-    Troof,  // boolean type
-    Yarn,   // string type
-    Bukkit, // object type
+    Noob,     // nil type
+    Numbr,    // integer type
+    Numbar,   // float type
+    Troof,    // boolean type
+    Yarn,     // string type
+    Bukkit,   // object type
+    Funkshun, // function type
 
     // specials
     NewLine, // suggested by Nitay to be called `NewLine` instead of `Newline`
@@ -128,6 +129,7 @@ impl TokenKind {
         Self::Troof,
         Self::Yarn,
         Self::Bukkit,
+        Self::Funkshun,
     ];
 
     pub const BLOCK_TERM: &'static [Self] = &[
@@ -208,6 +210,7 @@ impl TokenKind {
             TokenKind::Troof => "TROOF",
             TokenKind::Yarn => "YARN",
             TokenKind::Bukkit => "BUKKIT",
+            TokenKind::Funkshun => "FUNKSHUN",
             TokenKind::NewLine => "(new line)",
             TokenKind::Comma => ",",
             TokenKind::Eof => "(end of file)",

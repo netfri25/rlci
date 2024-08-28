@@ -541,6 +541,7 @@ impl<'a> Parser<'a> {
             TokenKind::Numbar => Type::Numbar { loc },
             TokenKind::Yarn => Type::Yarn { loc },
             TokenKind::Bukkit => Type::Bukkit { loc },
+            TokenKind::Funkshun => Type::Funkshun { loc },
             _ => unreachable!(),
         };
 

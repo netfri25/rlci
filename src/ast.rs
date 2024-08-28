@@ -85,6 +85,7 @@ pub enum Type {
     Numbar,
     Yarn,
     Bukkit,
+    Funkshun,
 }
 
 impl fmt::Display for Type {
@@ -96,6 +97,7 @@ impl fmt::Display for Type {
             Self::Numbar { .. } => "NUMBAR",
             Self::Yarn { .. } => "YARN",
             Self::Bukkit { .. } => "BUKKIT",
+            Self::Funkshun { .. } => "BUKKIT",
         };
         write!(f, "{}", text)
     }
