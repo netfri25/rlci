@@ -65,7 +65,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_block(&mut self) -> Option<Block> {
+    fn parse_block(&mut self) -> Option<Arc<Block>> {
         let mut stmts = Vec::new();
 
         while !self.peek().is_block_term() {
@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
             self.parse_seperator()?;
         }
 
-        Some(stmts)
+        Some(stmts.into())
     }
 
     fn parse_stmt(&mut self) -> Option<Stmt> {
@@ -210,6 +210,7 @@ impl<'a> Parser<'a> {
 
         self.expect(TokenKind::Oic)?;
 
+        let else_if = else_if.into();
         Some(Cond {
             loc,
             then,
@@ -248,6 +249,7 @@ impl<'a> Parser<'a> {
         };
 
         self.expect(TokenKind::Oic)?;
+        let cases = cases.into();
         Some(Switch {
             loc,
             cases,
@@ -374,13 +376,13 @@ impl<'a> Parser<'a> {
         let scope = self.parse_ident()?;
         let name = self.parse_ident()?;
         let args = if self.peek() == TokenKind::Yr {
-            self.parse_func_args()?
+            self.parse_func_args()?.into()
         } else {
-            vec![]
+            Default::default()
         };
 
         self.parse_seperator()?;
-        let block = Arc::new(self.parse_block()?);
+        let block = self.parse_block()?;
         self.expect(TokenKind::IfUSaySo)?;
 
         Some(FuncDef {
@@ -479,7 +481,7 @@ impl<'a> Parser<'a> {
                 loc,
                 scope,
                 name,
-                params: vec![],
+                params: Default::default()
             });
         }
 
@@ -491,6 +493,7 @@ impl<'a> Parser<'a> {
             params.push(expr);
         }
 
+        let params = params.into();
         Some(FuncCall {
             loc,
             scope,
@@ -501,7 +504,7 @@ impl<'a> Parser<'a> {
 
     fn parse_cast_expr(&mut self) -> Option<CastExpr> {
         let loc = self.expect(TokenKind::Maek)?.loc;
-        let expr = self.parse_expr().map(Box::new)?;
+        let expr = self.parse_expr().map(Arc::new)?;
         self.expect(TokenKind::A)?;
         let typ = self.parse_type()?;
         Some(CastExpr { loc, expr, typ })
@@ -517,7 +520,7 @@ impl<'a> Parser<'a> {
         )?;
 
         let ident = if kind == TokenKind::Srs {
-            let expr = self.parse_expr().map(Box::new)?;
+            let expr = self.parse_expr().map(Arc::new)?;
             Ident::Srs { loc, expr }
         } else {
             let name = text.into();
@@ -525,8 +528,8 @@ impl<'a> Parser<'a> {
         };
 
         if let Some(Token { loc, .. }) = self.accept(TokenKind::ApostZ) {
-            let parent = Box::new(ident);
-            let slot = self.parse_ident().map(Box::new)?;
+            let parent = Arc::new(ident);
+            let slot = self.parse_ident().map(Arc::new)?;
             Some(Ident::Access { loc, parent, slot })
         } else {
             Some(ident)
@@ -596,7 +599,7 @@ impl<'a> Parser<'a> {
     fn parse_string_lit(&mut self) -> Option<StringLit> {
         let Token { loc, text, .. } = self.accept(TokenKind::StringLit)?;
         let len = text.len() - 1;
-        let value = text[1..len].to_string().into_boxed_str();
+        let value = text[1..len].to_string().into();
         Some(StringLit { loc, value })
     }
 
@@ -609,7 +612,7 @@ impl<'a> Parser<'a> {
             _ => return None,
         };
 
-        let expr = self.parse_expr().map(Box::new)?;
+        let expr = self.parse_expr().map(Arc::new)?;
         Some(UnaryOp { loc, kind, expr })
     }
 
@@ -634,9 +637,9 @@ impl<'a> Parser<'a> {
         };
         self.next_token();
 
-        let lhs = self.parse_expr().map(Box::new)?;
+        let lhs = self.parse_expr().map(Arc::new)?;
         self.accept(TokenKind::An)?;
-        let rhs = self.parse_expr().map(Box::new)?;
+        let rhs = self.parse_expr().map(Arc::new)?;
         Some(BinaryOp {
             loc,
             kind,
@@ -663,6 +666,7 @@ impl<'a> Parser<'a> {
             params.push(expr);
         }
 
+        let params = params.into();
         Some(NaryOp { loc, kind, params })
     }
 
@@ -673,7 +677,7 @@ impl<'a> Parser<'a> {
 
     fn parse_system_cmd(&mut self) -> Option<SystemCmd> {
         let loc = self.expect(TokenKind::IDuz)?.loc;
-        let cmd = self.parse_expr().map(Box::new)?;
+        let cmd = self.parse_expr().map(Arc::new)?;
         Some(SystemCmd { loc, cmd })
     }
 
@@ -832,7 +836,7 @@ fn expected_one_of_msg(expected: &[TokenKind], got: &TokenKind) -> String {
     buf
 }
 
-fn escape_string(input: &str) -> Box<str> {
+fn escape_string(input: &str) -> Arc<str> {
     let mut output = String::new();
 
     let mut iter = input.chars();
@@ -850,7 +854,7 @@ fn escape_string(input: &str) -> Box<str> {
         output.push(c);
     }
 
-    output.into_boxed_str()
+    output.into()
 }
 
 #[cfg(test)]
@@ -874,7 +878,7 @@ mod tests {
         let expected = Module {
             loc: loc!(),
             version: 1.4,
-            block: vec![],
+            block: Default::default(),
         };
         assert_eq!(expected, got)
     }
@@ -925,7 +929,7 @@ mod tests {
                     name: srs(Expr::Ident(ident("var"))),
                     init: init_expr(string_expr("hello:)world:>:o::")),
                 }),
-            ],
+            ].into(),
         };
         assert_eq!(expected, got)
     }
@@ -949,7 +953,7 @@ mod tests {
     //                 kind: DeclareVarKind::WithExpr(Expr::BoolLit(BoolLit(true))),
     //             }),
     //             Stmt::Assign(Assign {
-    //                 target: Ident::Srs(Box::new(Expr::Ident(Ident::Literal("x")))),
+    //                 target: Ident::Srs(Arc::new(Expr::Ident(Ident::Literal("x")))),
     //                 expr: Expr::IntLit(IntLit(2)),
     //             }),
     //             Stmt::Assign(Assign {
@@ -977,26 +981,26 @@ mod tests {
     //             name: Ident::Literal("x"),
     //             kind: DeclareVarKind::WithExpr(Expr::BinOp(BinOp {
     //                 kind: BinOpKind::Add,
-    //                 lhs: Box::new(Expr::IntLit(IntLit(1))),
-    //                 rhs: Box::new(Expr::BinOp(BinOp {
+    //                 lhs: Arc::new(Expr::IntLit(IntLit(1))),
+    //                 rhs: Arc::new(Expr::BinOp(BinOp {
     //                     kind: BinOpKind::Sub,
-    //                     lhs: Box::new(Expr::IntLit(IntLit(2))),
-    //                     rhs: Box::new(Expr::BinOp(BinOp {
+    //                     lhs: Arc::new(Expr::IntLit(IntLit(2))),
+    //                     rhs: Arc::new(Expr::BinOp(BinOp {
     //                         kind: BinOpKind::Mul,
-    //                         lhs: Box::new(Expr::IntLit(IntLit(3))),
-    //                         rhs: Box::new(Expr::BinOp(BinOp {
+    //                         lhs: Arc::new(Expr::IntLit(IntLit(3))),
+    //                         rhs: Arc::new(Expr::BinOp(BinOp {
     //                             kind: BinOpKind::Div,
-    //                             lhs: Box::new(Expr::IntLit(IntLit(4))),
-    //                             rhs: Box::new(Expr::BinOp(BinOp {
+    //                             lhs: Arc::new(Expr::IntLit(IntLit(4))),
+    //                             rhs: Arc::new(Expr::BinOp(BinOp {
     //                                 kind: BinOpKind::Mod,
-    //                                 lhs: Box::new(Expr::IntLit(IntLit(5))),
-    //                                 rhs: Box::new(Expr::BinOp(BinOp {
+    //                                 lhs: Arc::new(Expr::IntLit(IntLit(5))),
+    //                                 rhs: Arc::new(Expr::BinOp(BinOp {
     //                                     kind: BinOpKind::Max,
-    //                                     lhs: Box::new(Expr::IntLit(IntLit(6))),
-    //                                     rhs: Box::new(Expr::BinOp(BinOp {
+    //                                     lhs: Arc::new(Expr::IntLit(IntLit(6))),
+    //                                     rhs: Arc::new(Expr::BinOp(BinOp {
     //                                         kind: BinOpKind::Min,
-    //                                         lhs: Box::new(Expr::IntLit(IntLit(7))),
-    //                                         rhs: Box::new(Expr::IntLit(IntLit(8))),
+    //                                         lhs: Arc::new(Expr::IntLit(IntLit(7))),
+    //                                         rhs: Arc::new(Expr::IntLit(IntLit(8))),
     //                                     })),
     //                                 })),
     //                             })),
@@ -1012,13 +1016,13 @@ mod tests {
 
     fn ident(name: impl ToString) -> Ident {
         Ident::Lit {
-            name: name.to_string().into_boxed_str(),
+            name: name.to_string().into(),
             loc: loc!(),
         }
     }
 
     fn srs(expr: Expr) -> Ident {
-        let expr = Box::new(expr);
+        let expr = expr.into();
         Ident::Srs { expr, loc: loc!() }
     }
 
@@ -1039,7 +1043,7 @@ mod tests {
     }
 
     fn string_expr(value: impl ToString) -> Expr {
-        let value = value.to_string().into_boxed_str();
+        let value = value.to_string().into();
         Expr::String(StringLit { loc: loc!(), value })
     }
 

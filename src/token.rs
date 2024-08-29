@@ -1,6 +1,6 @@
 use std::ops::Deref;
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'a> {
@@ -279,7 +279,7 @@ impl TokenKind {
 // WARN: `Loc == Loc` always returns true
 #[derive(Debug, Clone, Eq, PartialOrd, Ord, thiserror::Error)]
 pub struct Loc {
-    path: Rc<Path>,
+    path: Arc<Path>,
     row: u32,
     col: u32,
 }

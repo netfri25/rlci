@@ -1,82 +1,55 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::ops::Deref;
+use std::sync::{Arc, Mutex};
 
-use crate::object::{Object, ObjectValue};
+use crate::object::Object;
 
 #[derive(Debug, Clone, Default)]
-pub struct SharedScope(Arc<RwLock<Scope>>);
+pub struct SharedScope(Arc<Scope>);
 
 impl SharedScope {
     pub fn new(parent: Option<SharedScope>) -> Self {
-        Self(Arc::new(RwLock::new(Scope::new(parent))))
-    }
-
-    pub fn parent(&self) -> Option<SharedScope> {
-        self.0.read().unwrap().parent.clone()
-    }
-
-    pub fn define(&self, name: String, value: Object) -> Result<(), Error> {
-        self.0.write().unwrap().define(name, value)
-    }
-
-    pub fn is_defined(&self, name: &str) -> bool {
-        self.0.read().unwrap().is_defined(name)
-    }
-
-    pub fn get(&self, name: &str) -> Result<Object, Error> {
-        self.0.read().unwrap().get(name)
-    }
-
-    pub fn assign_ref(&self, name: &str, value: Object) -> Result<(), Error> {
-        self.0.write().unwrap().assign_ref(name, value)
-    }
-
-    pub fn assign_value(&self, name: &str, value: ObjectValue) -> Result<(), Error> {
-        self.0.write().unwrap().assign_value(name, value)
-    }
-
-    pub fn get_it(&self) -> Object {
-        self.0.read().unwrap().get_it()
-    }
-
-    pub fn set_it_value(&self, value: ObjectValue) {
-        self.0.write().unwrap().set_it_value(value)
-    }
-
-    pub fn set_it_ref(&self, value: Object) {
-        self.0.write().unwrap().set_it_ref(value)
+        Self(Arc::new(Scope::new(parent)))
     }
 }
 
-#[derive(Debug, Clone, Default)]
-struct Scope {
-    vars: HashMap<String, Object>,
-    it: Object,
+impl Deref for SharedScope {
+    type Target = Scope;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(Default)]
+pub struct Scope {
+    vars: Mutex<HashMap<String, Object>>,
+    it: Mutex<Object>,
     parent: Option<SharedScope>,
 }
 
 impl Scope {
-    pub fn new(parent: Option<SharedScope>) -> Self {
+    fn new(parent: Option<SharedScope>) -> Self {
         let vars = Default::default();
-        let it = Object::default();
+        let it = Default::default();
         Self { vars, it, parent }
     }
 
-    pub fn define(&mut self, name: String, value: Object) -> Result<(), Error> {
-        if self.vars.contains_key(&name) {
+    pub fn define(&self, name: String, value: Object) -> Result<(), Error> {
+        if self.vars.lock().unwrap().contains_key(&name) {
             return Err(Error::AlreadyExists(name));
         }
 
-        self.vars.insert(name, value);
+        self.vars.lock().unwrap().insert(name, value);
         Ok(())
     }
 
-    pub fn is_defined(&self, name: &str) -> bool {
-        self.vars.contains_key(name) || self.parent.as_ref().is_some_and(|parent| parent.is_defined(name))
+    pub fn insert(&self, name: String, value: Object) {
+        self.vars.lock().unwrap().insert(name, value);
     }
 
     pub fn get(&self, name: &str) -> Result<Object, Error> {
-        if let Some(obj) = self.vars.get(name).cloned() {
+        if let Some(obj) = self.vars.lock().unwrap().get(name).cloned() {
             return Ok(obj);
         }
 
@@ -86,34 +59,42 @@ impl Scope {
             .and_then(|parent| parent.get(name))
     }
 
-    pub fn assign_ref(&mut self, name: &str, value: Object) -> Result<(), Error> {
-        if let Some(obj) = self.vars.get_mut(name) {
+    pub fn assign(&self, name: &str, value: Object) -> Result<(), Error> {
+        if let Some(obj) = self.vars.lock().unwrap().get_mut(name) {
             *obj = value;
-            return Ok(());
+            return Ok(())
         }
 
         self.parent
             .as_ref()
             .ok_or_else(|| Error::DoesNotExist(name.to_string()))
-            .and_then(move |parent| parent.assign_ref(name, value))
-    }
-
-    pub fn assign_value(&mut self, name: &str, value: ObjectValue) -> Result<(), Error> {
-        let object = self.get(name)?;
-        object.set(value);
-        Ok(())
+            .and_then(|parent| parent.assign(name, value))
     }
 
     pub fn get_it(&self) -> Object {
-        self.it.clone()
+        self.it.lock().unwrap().clone()
     }
 
-    pub fn set_it_value(&mut self, value: ObjectValue) {
-        self.it.set(value)
+    pub fn set_it(&self, object: Object) {
+        *self.it.lock().unwrap() = object;
     }
+}
 
-    pub fn set_it_ref(&mut self, value: Object) {
-        self.it = value
+impl std::fmt::Debug for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let lock = self.vars.lock().unwrap();
+        let mut f = f.debug_map();
+        for (key, value) in lock.iter() {
+            if key == "ME" {
+                f.entry(&"ME", &"<recursive>");
+            } else if value.is_funkshun() {
+                f.entry(key, &"FUNKSHUN");
+            } else {
+                f.entry(key, value);
+            }
+        }
+
+        f.finish()
     }
 }
 

@@ -11,10 +11,10 @@ use crate::token::Loc;
 pub struct Module {
     pub loc: Loc,
     pub version: f64,
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
-pub type Block = Vec<Stmt>;
+pub type Block = [Stmt];
 
 fn indent<T: ToString>(input: T) -> String {
     "    ".to_string() + input.to_string().replace("\n", "\n    ").as_str()
@@ -23,7 +23,7 @@ fn indent<T: ToString>(input: T) -> String {
 fn display_newline<T: ToString>(xs: &[T]) -> String {
     xs.iter()
         .map(|stmt| stmt.to_string())
-        .collect::<Vec<String>>()
+        .collect::<Arc<[String]>>()
         .join("\n")
 }
 
@@ -52,7 +52,7 @@ pub struct FloatLit {
 #[display("{value}")]
 pub struct StringLit {
     pub loc: Loc,
-    pub value: Box<str>,
+    pub value: Arc<str>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -65,15 +65,15 @@ pub struct NoobLit {
 #[derive(Debug, Display, Clone, PartialEq)]
 pub enum Ident {
     #[display("{name}")]
-    Lit { name: Box<str> },
+    Lit { name: Arc<str> },
 
     #[display("SRS {expr}")]
-    Srs { expr: Box<Expr> },
+    Srs { expr: Arc<Expr> },
 
     #[display("{parent}'Z {slot}")]
     Access {
-        parent: Box<Ident>,
-        slot: Box<Ident>,
+        parent: Arc<Ident>,
+        slot: Arc<Ident>,
     },
 }
 
@@ -163,8 +163,8 @@ pub enum Init {
 #[display("O RLY?\n    YA RLY\n{}\n{}\n{}OIC", indent(indent(display_newline(then))), indent(display_newline(else_if)), indent(otherwise.as_ref().map(|otherwise| format!("{}\n", otherwise)).unwrap_or_default()))]
 pub struct Cond {
     pub loc: Loc,
-    pub then: Block,
-    pub else_if: Vec<ElseIf>,
+    pub then: Arc<Block>,
+    pub else_if: Arc<[ElseIf]>,
     pub otherwise: Option<Else>,
 }
 
@@ -173,21 +173,21 @@ pub struct Cond {
 pub struct ElseIf {
     pub loc: Loc,
     pub cond: Expr,
-    pub then: Block,
+    pub then: Arc<Block>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display("NO WAI\n{}", indent(display_newline(block)))]
 pub struct Else {
     pub loc: Loc,
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display("WTF?\n{}\n{}OIC", indent(display_newline(cases)), indent(default.as_ref().map(|d| format!("{}\n", d)).unwrap_or_default()))]
 pub struct Switch {
     pub loc: Loc,
-    pub cases: Vec<Case>, // must be at least one
+    pub cases: Arc<[Case]>, // must be at least one
     pub default: Option<DefaultCase>,
 }
 
@@ -196,14 +196,14 @@ pub struct Switch {
 pub struct Case {
     pub loc: Loc,
     pub expr: Expr,
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display("OMGWTF\n{}", indent(display_newline(block)))]
 pub struct DefaultCase {
     pub loc: Loc,
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -231,7 +231,7 @@ pub struct Loop {
     pub name: Ident,
     pub update: Option<LoopUpdate>,
     pub guard: Option<LoopGuard>,
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
 impl Loop {
@@ -293,7 +293,7 @@ pub struct FuncDef {
     pub loc: Loc,
     pub scope: Ident,
     pub name: Ident,
-    pub args: Vec<FuncArg>,
+    pub args: Arc<[FuncArg]>,
     pub block: Arc<Block>,
 }
 
@@ -305,7 +305,7 @@ pub struct ObjectDef {
     pub loc: Loc,
     pub name: Ident,
     pub inherit: Option<Ident>,
-    pub block: Block,
+    pub block: Arc<Block>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -386,7 +386,7 @@ impl Expr {
 #[display("MAEK {expr} A {typ}")]
 pub struct CastExpr {
     pub loc: Loc,
-    pub expr: Box<Expr>,
+    pub expr: Arc<Expr>,
     pub typ: Type,
 }
 
@@ -396,7 +396,7 @@ pub struct FuncCall {
     pub loc: Loc,
     pub scope: Ident,
     pub name: Ident,
-    pub params: Vec<Param>,
+    pub params: Arc<[Param]>,
 }
 
 pub type Param = Expr;
@@ -405,7 +405,7 @@ pub type Param = Expr;
 #[display("I DUZ {cmd}")]
 pub struct SystemCmd {
     pub loc: Loc,
-    pub cmd: Box<Expr>,
+    pub cmd: Arc<Expr>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -413,7 +413,7 @@ pub struct SystemCmd {
 pub struct UnaryOp {
     pub loc: Loc,
     pub kind: UnaryOpKind,
-    pub expr: Box<Expr>,
+    pub expr: Arc<Expr>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -427,8 +427,8 @@ pub enum UnaryOpKind {
 pub struct BinaryOp {
     pub loc: Loc,
     pub kind: BinaryOpKind,
-    pub lhs: Box<Expr>,
-    pub rhs: Box<Expr>,
+    pub lhs: Arc<Expr>,
+    pub rhs: Arc<Expr>,
 }
 
 #[derive(Debug, Display, Clone, Copy, PartialEq)]
@@ -475,7 +475,7 @@ pub enum BinaryOpKind {
 pub struct NaryOp {
     pub loc: Loc,
     pub kind: NaryOpKind,
-    pub params: Vec<Expr>,
+    pub params: Arc<[Expr]>,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]

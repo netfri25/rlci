@@ -1,13 +1,14 @@
 use std::path::Path;
+use std::sync::Arc;
 
-use crate::object::{Bukkit, Funkshun, Object, ObjectType, ObjectValue};
+use crate::object::{Bukkit, Funkshun, Object, ObjectType};
 use crate::token::Loc;
 use crate::{ast::*, parser, scope};
 
 use crate::scope::SharedScope;
 
 #[derive(Debug, Default)]
-pub struct Interpreter;
+pub struct Interpreter {}
 
 impl Interpreter {
     pub fn eval_file(&mut self, path: &(impl AsRef<Path> + ?Sized)) -> Result<SharedScope, Error> {
@@ -23,8 +24,8 @@ impl Interpreter {
 
     pub fn eval_module(&mut self, module: Module) -> Result<SharedScope, Error> {
         let scope = SharedScope::default();
-        for stmt in module.block {
-            self.eval_stmt(&stmt, &scope)?
+        for stmt in module.block.iter() {
+            self.eval_stmt(stmt, &scope)?
         }
 
         Ok(scope)
@@ -41,19 +42,24 @@ impl Interpreter {
             Stmt::Switch(_) => todo!(),
             Stmt::Loop(looop) => self.eval_loop(looop, scope),
             Stmt::FuncDef(func_def) => self.eval_func_def(func_def, scope),
-            Stmt::ObjectDef(object_def) => self.eval_object_def(object_def, scope),
-            Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it_ref(obj)),
+            Stmt::ObjectDef(ObjectDef {
+                loc,
+                name,
+                inherit,
+                block,
+            }) => self.eval_object_def(loc.clone(), name, inherit.as_ref(), block, scope),
+            Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it(obj)),
             Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
-            Stmt::Return(Return { loc, expr }) => {
-                Err(Error::Return(loc.clone(), self.eval_expr(expr, scope)?))
-            }
+            Stmt::Return(Return { loc, expr }) => self
+                .eval_expr(expr, scope)
+                .and_then(|expr| Err(Error::Return(loc.clone(), expr))),
         }
     }
 
     pub fn eval_print(&mut self, print: &Print, scope: &SharedScope) -> Result<(), Error> {
         let loc = print.loc();
         let value = self.eval_expr(print.expr(), scope)?;
-        let text = self.cast_string(loc.clone(), &value.get())?;
+        let text = self.cast_string(loc.clone(), &value)?;
         match print {
             Print::Visible { .. } => println!("{}", text),
             Print::Invisible { .. } => eprintln!("{}", text),
@@ -63,8 +69,6 @@ impl Interpreter {
     }
 
     pub fn eval_input(&mut self, input: &Input, scope: &SharedScope) -> Result<(), Error> {
-        let name = self.eval_ident_name(&input.target, scope)?;
-
         let mut line = String::new();
         std::io::stdin()
             .read_line(&mut line)
@@ -72,53 +76,50 @@ impl Interpreter {
                 loc: input.loc.clone(),
                 reason: err.kind(),
             })?;
-        let line = line.trim_end_matches('\n').to_string();
+        let line = line.trim_end_matches('\n');
 
-        let value = ObjectValue::Yarn(line);
-        let res = if scope.is_defined(&name) {
-            scope.assign_value(&name, value)
-        } else {
-            scope.define(name, Object::new(value))
-        };
-
-        res.map_err(|err| Error::Scope(input.target.loc().clone(), err))
+        let target = &input.target;
+        let value = Object::Yarn(line.into());
+        self.insert(target, value, scope)
     }
 
     pub fn eval_assign(&mut self, assign: &Assign, scope: &SharedScope) -> Result<(), Error> {
-        let name = self.eval_ident_name(&assign.target, scope)?;
         let value = self.eval_expr(&assign.expr, scope)?;
-        let get = value.get();
-        scope
-            .assign_value(&name, get.clone())
-            .map_err(|err| Error::Scope(assign.loc.clone(), err))
+        self.assign(&assign.target, value, scope)
     }
 
     pub fn eval_declare(&mut self, declare: &Declare, scope: &SharedScope) -> Result<(), Error> {
-        let define_scope = &self.eval_scope(&declare.scope, scope)?;
-        let name = self.eval_ident_name(&declare.name, scope)?;
         let object = match &declare.init {
-            None => Object::new(ObjectValue::default_noob()),
-            Some(Init::Expr { expr, .. }) => Object::new(self.eval_expr(expr, scope)?.get().clone()),
+            None => Object::default_noob(),
+            Some(Init::Expr { expr, .. }) => self.eval_expr(expr, scope)?,
             Some(Init::Type { typ, .. }) => match typ {
-                Type::Noob { .. } => Object::new(ObjectValue::default_noob()),
-                Type::Troof { .. } => Object::new(ObjectValue::default_troof()),
-                Type::Numbr { .. } => Object::new(ObjectValue::default_numbr()),
-                Type::Numbar { .. } => Object::new(ObjectValue::default_numbar()),
-                Type::Yarn { .. } => Object::new(ObjectValue::default_yarn()),
-                Type::Bukkit { .. } => Object::new(ObjectValue::default_bukkit(scope.clone())),
-                Type::Funkshun { .. } => Object::new(ObjectValue::default_funkshun(scope.clone())),
+                Type::Noob { .. } => Object::default_noob(),
+                Type::Troof { .. } => Object::default_troof(),
+                Type::Numbr { .. } => Object::default_numbr(),
+                Type::Numbar { .. } => Object::default_numbar(),
+                Type::Yarn { .. } => Object::default_yarn(),
+                Type::Bukkit { .. } => Object::default_bukkit(scope.clone()),
+                Type::Funkshun { .. } => Object::default_funkshun(scope.clone()),
             },
-            Some(Init::Like { .. }) => todo!("LIEK"),
+            Some(Init::Like { target, loc }) => {
+                let define_scope = &self.eval_scope(&declare.scope, scope)?;
+                return self.eval_object_def(
+                    loc.clone(),
+                    &declare.name,
+                    Some(target),
+                    &[],
+                    define_scope,
+                );
+            }
         };
 
-        define_scope
-            .define(name, object)
-            .map_err(|err| Error::Scope(declare.loc.clone(), err))
+        let define_scope = &self.eval_scope(&declare.scope, scope)?;
+        self.define(&declare.name, object, define_scope)
     }
 
     pub fn eval_cond(&mut self, cond: &Cond, scope: &SharedScope) -> Result<(), Error> {
         let it = scope.get_it();
-        let condition = self.cast_bool(cond.loc.clone(), &it.get())?;
+        let condition = self.cast_bool(cond.loc.clone(), &it)?;
 
         if condition {
             return self.eval_block(&cond.then, scope);
@@ -126,7 +127,7 @@ impl Interpreter {
 
         for else_if in cond.else_if.iter() {
             let object = self.eval_expr(&else_if.cond, scope)?;
-            let condition = self.cast_bool(else_if.loc.clone(), &object.get())?;
+            let condition = self.cast_bool(else_if.loc.clone(), &object)?;
             if condition {
                 return self.eval_block(&else_if.then, scope);
             }
@@ -142,18 +143,15 @@ impl Interpreter {
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
         let loop_scope = &SharedScope::new(Some(scope.clone()));
         if let Some(var) = looop.var() {
-            let name = self.eval_ident_name(var, scope)?;
-            let value = Object::new(ObjectValue::default_numbr());
-            loop_scope
-                .define(name, value)
-                .map_err(|err| Error::Scope(var.loc().clone(), err))?;
+            let value = Object::default_numbr();
+            self.define(var, value, loop_scope)?;
         };
 
         loop {
             let scope = &SharedScope::new(Some(loop_scope.clone()));
             if let Some(ref guard) = looop.guard {
                 let cond = self.eval_expr(guard.cond(), scope)?;
-                let troof = self.cast_bool(guard.cond().loc().clone(), &cond.get())?;
+                let troof = self.cast_bool(guard.cond().loc().clone(), &cond)?;
                 match guard {
                     LoopGuard::Til { .. } if troof => break,
                     LoopGuard::Wile { .. } if !troof => break,
@@ -170,23 +168,24 @@ impl Interpreter {
             if let Some(ref update) = looop.update {
                 let loc = update.loc();
                 let target = update.target();
-                let name = self.eval_ident_name(target, scope)?;
                 match update {
                     LoopUpdate::Uppin { .. } => {
                         let object = self.eval_ident(target, scope)?;
-                        let ObjectValue::Numbr(ref mut value) = *object.get_mut() else {
-                            return Err(Error::LoopVarNotNumbr(target.loc().clone(), name));
+                        let Some(value) = object.as_numbr() else {
+                            return Err(Error::LoopVarNotNumbr(target.clone()));
                         };
 
-                        *value += 1;
+                        let value = Object::Numbr(value + 1);
+                        self.assign(target, value, scope)?;
                     }
                     LoopUpdate::Nerfin { .. } => {
                         let object = self.eval_ident(target, scope)?;
-                        let ObjectValue::Numbr(ref mut value) = *object.get_mut() else {
-                            return Err(Error::LoopVarNotNumbr(target.loc().clone(), name));
+                        let Some(value) = object.as_numbr() else {
+                            return Err(Error::LoopVarNotNumbr(target.clone()));
                         };
 
-                        *value -= 1;
+                        let value = Object::Numbr(value - 1);
+                        self.assign(target, value, scope)?;
                     }
                     LoopUpdate::UnaryFunction {
                         scope: scope_ident,
@@ -200,9 +199,7 @@ impl Interpreter {
                             &[Expr::Ident(target.clone())],
                             scope,
                         )?;
-                        scope
-                            .assign_ref(&name, value)
-                            .map_err(|err| Error::Scope(loc.clone(), err))?;
+                        self.assign(target, value, scope)?;
                     }
                 }
             }
@@ -213,49 +210,64 @@ impl Interpreter {
 
     pub fn eval_func_def(&mut self, func_def: &FuncDef, scope: &SharedScope) -> Result<(), Error> {
         let scope = &self.eval_scope(&func_def.scope, scope)?;
-        let name = self.eval_ident_name(&func_def.name, scope)?;
         let funkshun = Funkshun {
             scope: scope.clone(),
             args: func_def.args.clone(),
             block: func_def.block.clone(),
         };
-        let object = Object::new(ObjectValue::Funkshun(funkshun));
-        scope
-            .define(name, object)
-            .map_err(|err| Error::Scope(func_def.loc.clone(), err))
+        let object = Object::Funkshun(Arc::new(funkshun));
+        self.define(&func_def.name, object, scope)
     }
 
     pub fn eval_object_def(
         &mut self,
-        object_def: &ObjectDef,
+        loc: Loc,
+        name: &Ident,
+        inherit: Option<&Ident>,
+        block: &Block,
         scope: &SharedScope,
     ) -> Result<(), Error> {
-        let name = self.eval_ident_name(&object_def.name, scope)?;
-        let bukkit = Bukkit::new(scope.clone());
+        let parent = if let Some(inherit) = inherit {
+            self.eval_scope(inherit, scope)?
+        } else {
+            scope.clone()
+        };
+
+        let bukkit = Bukkit::new(parent.clone());
         let object_scope = bukkit.scope().clone();
-        let object = Object::new(ObjectValue::Bukkit(bukkit));
-        scope
-            .define(name, object.clone())
-            .map_err(|err| Error::Scope(object_def.loc.clone(), err))?;
+        let object = Object::Bukkit(Arc::new(bukkit));
+        self.define(name, object.clone(), scope)?;
+        self.define(
+            &Ident::Lit {
+                name: "ME".into(),
+                loc,
+            },
+            object.clone(),
+            &object_scope,
+        )?;
 
-        object_scope
-            .define("ME".into(), object.clone())
-            .map_err(|err| Error::Scope(object_def.loc.clone(), err))?;
+        if let Some(inherit) = inherit {
+            self.define(
+                &Ident::Lit {
+                    name: "parent".into(),
+                    loc: inherit.loc().clone(),
+                },
+                Object::Bukkit(Arc::new(Bukkit::from_scope(parent))),
+                &object_scope,
+            )?;
+        }
 
-        // TODO: inherit
-        self.eval_block(&object_def.block, &object_scope)
+        self.eval_block(block, &object_scope)
     }
 
     pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
         match expr {
             Expr::Cast(_) => todo!(),
-            Expr::Bool(BoolLit { value, .. }) => Ok(Object::new(ObjectValue::Troof(*value))),
-            Expr::Int(IntLit { value, .. }) => Ok(Object::new(ObjectValue::Numbr(*value))),
-            Expr::Float(FloatLit { value, .. }) => Ok(Object::new(ObjectValue::Numbar(*value))),
-            Expr::String(StringLit { value, .. }) => {
-                Ok(Object::new(ObjectValue::Yarn(value.to_string())))
-            }
-            Expr::Noob(NoobLit { .. }) => Ok(Object::new(ObjectValue::Noob)),
+            Expr::Bool(BoolLit { value, .. }) => Ok(Object::Troof(*value)),
+            Expr::Int(IntLit { value, .. }) => Ok(Object::Numbr(*value)),
+            Expr::Float(FloatLit { value, .. }) => Ok(Object::Numbar(*value)),
+            Expr::String(StringLit { value, .. }) => Ok(Object::Yarn(value.clone())),
+            Expr::Noob(NoobLit { .. }) => Ok(Object::Noob),
             Expr::Ident(ident) => self.eval_ident(ident, scope),
             Expr::FuncCall(FuncCall {
                 loc,
@@ -271,36 +283,18 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_ident_name(&mut self, ident: &Ident, scope: &SharedScope) -> Result<String, Error> {
-        match ident {
-            Ident::Lit { name, .. } => Ok(name.to_string()),
-            Ident::Srs { expr, loc } => self
-                .eval_expr(expr, scope)
-                .and_then(|obj| self.cast_string(loc.clone(), &obj.get())),
-            Ident::Access { parent, slot, loc } => {
-                self.eval_ident_name(slot, scope)
-                // let parent_name = self.eval_ident_name(parent, scope)?;
-                // let parent_object = self.eval_ident(parent, scope)?;
-                // let ObjectValue::Bukkit(ref parent_bukkit) = *parent_object.get() else {
-                //     return Err(Error::NotABukkit(parent.loc().clone(), parent_name));
-                // };
-
-                // let slot_object = self.eval_ident(slot, parent_bukkit.scope())?;
-                // let slot_value = slot_object.get();
-                // self.cast_string(loc.clone(), &slot_value)
-            }
-        }
-    }
-
     pub fn eval_ident(&mut self, ident: &Ident, scope: &SharedScope) -> Result<Object, Error> {
-        fn eval_ident_help(me: &mut Interpreter, ident: &Ident, start_scope: &SharedScope, scope: &SharedScope) -> Result<Object, Error> {
+        fn eval_ident_help(
+            me: &mut Interpreter,
+            ident: &Ident,
+            start_scope: &SharedScope,
+            scope: &SharedScope,
+        ) -> Result<Object, Error> {
             let name = match ident {
                 Ident::Lit { name, .. } => name.to_string(),
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, start_scope)?;
-                    // dbg!(expr, &object);
-                    let get = object.get();
-                    me.cast_string(loc.clone(), &get)?
+                    me.cast_string(loc.clone(), &object)?
                 }
                 Ident::Access { parent, slot, .. } => {
                     let parent_scope = me.eval_scope(parent, scope)?;
@@ -327,13 +321,13 @@ impl Interpreter {
             }
         };
 
-        let scope_name = self.eval_ident_name(scope_ident, scope)?;
         let scope_object = self.eval_ident(scope_ident, scope)?;
-        let ObjectValue::Bukkit(ref scope_bukkit) = *scope_object.get() else {
-            return Err(Error::NotABukkit(scope_ident.loc().clone(), scope_name));
+        let Some(scope_bukkit) = scope_object.as_bukkit() else {
+            return Err(Error::NotABukkit(scope_ident.clone()));
         };
 
-        Ok(scope_bukkit.scope().clone())
+        let scope = scope_bukkit.scope().clone();
+        Ok(scope)
     }
 
     pub fn eval_func_call(
@@ -345,10 +339,9 @@ impl Interpreter {
         outer_scope: &SharedScope,
     ) -> Result<Object, Error> {
         let scope = self.eval_scope(scope_ident, outer_scope)?;
-        let func_name = self.eval_ident_name(name, &scope)?;
         let func_object = self.eval_ident(name, &scope)?;
-        let ObjectValue::Funkshun(ref func) = *func_object.get() else {
-            return Err(Error::NotCallable(name.loc().clone(), func_name));
+        let Object::Funkshun(func) = func_object else {
+            return Err(Error::NotCallable(name.clone()));
         };
 
         if func.args.len() != params.len() {
@@ -361,15 +354,12 @@ impl Interpreter {
 
         let scope = SharedScope::new(Some(func.scope.clone()));
         for (ident, expr) in func.args.iter().zip(params) {
-            let name = self.eval_ident_name(ident, outer_scope)?;
             let object = self.eval_expr(expr, outer_scope)?;
-            scope
-                .define(name, object)
-                .map_err(|err| Error::Scope(ident.loc().clone(), err))?;
+            self.define(ident, object, &scope)?;
         }
 
         match self.eval_block(&func.block, &scope) {
-            Err(Error::Break(..)) => Ok(Object::new(ObjectValue::Noob)),
+            Err(Error::Break(..)) => Ok(Object::Noob),
             Err(Error::Return(_, value)) => Ok(value),
             Err(err) => Err(err),
             Ok(()) => Ok(scope.get_it()),
@@ -384,8 +374,8 @@ impl Interpreter {
         let value = self.eval_expr(&unary_op.expr, scope)?;
         match &unary_op.kind {
             UnaryOpKind::Not => {
-                let value = self.cast_bool(unary_op.loc.clone(), &value.get())?;
-                Ok(Object::new(ObjectValue::Troof(!value)))
+                let value = self.cast_bool(unary_op.loc.clone(), &value)?;
+                Ok(Object::Troof(!value))
             }
         }
     }
@@ -398,11 +388,11 @@ impl Interpreter {
         let lhs = self.eval_expr(&binary_op.lhs, scope)?;
         let rhs = self.eval_expr(&binary_op.rhs, scope)?;
 
-        let is_lhs_float = lhs.get().is_numbar();
-        let is_lhs_num = is_lhs_float || lhs.get().is_numbr();
+        let is_lhs_float = lhs.is_numbar();
+        let is_lhs_num = is_lhs_float || lhs.is_numbr();
 
-        let is_rhs_float = rhs.get().is_numbar();
-        let is_rhs_num = is_rhs_float || rhs.get().is_numbr();
+        let is_rhs_float = rhs.is_numbar();
+        let is_rhs_num = is_rhs_float || rhs.is_numbr();
 
         let loc = binary_op.loc.clone();
         let kind = binary_op.kind;
@@ -413,19 +403,19 @@ impl Interpreter {
                     return Err(Error::CantApplyBinaryOp {
                         loc,
                         kind,
-                        lhs: lhs.get().typ(),
-                        rhs: rhs.get().typ(),
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
                     });
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
-                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
-                    Ok(Object::new(ObjectValue::Numbar(lhs + rhs)))
+                    let lhs = self.cast_float(loc.clone(), &lhs)?;
+                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    Ok(Object::Numbar(lhs + rhs))
                 } else {
-                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::new(ObjectValue::Numbr(lhs + rhs)))
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs + rhs))
                 }
             }
 
@@ -434,19 +424,19 @@ impl Interpreter {
                     return Err(Error::CantApplyBinaryOp {
                         loc,
                         kind,
-                        lhs: lhs.get().typ(),
-                        rhs: rhs.get().typ(),
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
                     });
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
-                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
-                    Ok(Object::new(ObjectValue::Numbar(lhs - rhs)))
+                    let lhs = self.cast_float(loc.clone(), &lhs)?;
+                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    Ok(Object::Numbar(lhs - rhs))
                 } else {
-                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::new(ObjectValue::Numbr(lhs - rhs)))
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs - rhs))
                 }
             }
 
@@ -455,19 +445,19 @@ impl Interpreter {
                     return Err(Error::CantApplyBinaryOp {
                         loc,
                         kind,
-                        lhs: lhs.get().typ(),
-                        rhs: rhs.get().typ(),
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
                     });
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
-                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
-                    Ok(Object::new(ObjectValue::Numbar(lhs * rhs)))
+                    let lhs = self.cast_float(loc.clone(), &lhs)?;
+                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    Ok(Object::Numbar(lhs * rhs))
                 } else {
-                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::new(ObjectValue::Numbr(lhs * rhs)))
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs * rhs))
                 }
             }
 
@@ -476,19 +466,19 @@ impl Interpreter {
                     return Err(Error::CantApplyBinaryOp {
                         loc,
                         kind,
-                        lhs: lhs.get().typ(),
-                        rhs: rhs.get().typ(),
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
                     });
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
-                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
-                    Ok(Object::new(ObjectValue::Numbar(lhs / rhs)))
+                    let lhs = self.cast_float(loc.clone(), &lhs)?;
+                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    Ok(Object::Numbar(lhs / rhs))
                 } else {
-                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::new(ObjectValue::Numbr(lhs / rhs)))
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs / rhs))
                 }
             }
 
@@ -497,19 +487,19 @@ impl Interpreter {
                     return Err(Error::CantApplyBinaryOp {
                         loc,
                         kind,
-                        lhs: lhs.get().typ(),
-                        rhs: rhs.get().typ(),
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
                     });
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
-                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
-                    Ok(Object::new(ObjectValue::Numbar(lhs % rhs)))
+                    let lhs = self.cast_float(loc.clone(), &lhs)?;
+                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    Ok(Object::Numbar(lhs % rhs))
                 } else {
-                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::new(ObjectValue::Numbr(lhs % rhs)))
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs % rhs))
                 }
             }
 
@@ -518,19 +508,19 @@ impl Interpreter {
                     return Err(Error::CantApplyBinaryOp {
                         loc,
                         kind,
-                        lhs: lhs.get().typ(),
-                        rhs: rhs.get().typ(),
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
                     });
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
-                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
-                    Ok(Object::new(ObjectValue::Numbar(lhs.max(rhs))))
+                    let lhs = self.cast_float(loc.clone(), &lhs)?;
+                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    Ok(Object::Numbar(lhs.max(rhs)))
                 } else {
-                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::new(ObjectValue::Numbr(lhs.max(rhs))))
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs.max(rhs)))
                 }
             }
 
@@ -539,91 +529,87 @@ impl Interpreter {
                     return Err(Error::CantApplyBinaryOp {
                         loc,
                         kind,
-                        lhs: lhs.get().typ(),
-                        rhs: rhs.get().typ(),
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
                     });
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs.get())?;
-                    let rhs = self.cast_float(loc.clone(), &rhs.get())?;
-                    Ok(Object::new(ObjectValue::Numbar(lhs.min(rhs))))
+                    let lhs = self.cast_float(loc.clone(), &lhs)?;
+                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    Ok(Object::Numbar(lhs.min(rhs)))
                 } else {
-                    let lhs = lhs.get().as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.get().as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::new(ObjectValue::Numbr(lhs.min(rhs))))
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs.min(rhs)))
                 }
             }
 
             BinaryOpKind::And => {
-                let lhs = self.cast_bool(loc.clone(), &lhs.get())?;
-                let rhs = self.cast_bool(loc.clone(), &rhs.get())?;
-                Ok(Object::new(ObjectValue::Troof(lhs && rhs)))
+                let lhs = self.cast_bool(loc.clone(), &lhs)?;
+                let rhs = self.cast_bool(loc.clone(), &rhs)?;
+                Ok(Object::Troof(lhs && rhs))
             }
 
             BinaryOpKind::Or => {
-                let lhs = self.cast_bool(loc.clone(), &lhs.get())?;
-                let rhs = self.cast_bool(loc.clone(), &rhs.get())?;
-                Ok(Object::new(ObjectValue::Troof(lhs || rhs)))
+                let lhs = self.cast_bool(loc.clone(), &lhs)?;
+                let rhs = self.cast_bool(loc.clone(), &rhs)?;
+                Ok(Object::Troof(lhs || rhs))
             }
 
             BinaryOpKind::Xor => {
-                let lhs = self.cast_bool(loc.clone(), &lhs.get())?;
-                let rhs = self.cast_bool(loc.clone(), &rhs.get())?;
-                Ok(Object::new(ObjectValue::Troof(lhs ^ rhs)))
+                let lhs = self.cast_bool(loc.clone(), &lhs)?;
+                let rhs = self.cast_bool(loc.clone(), &rhs)?;
+                Ok(Object::Troof(lhs ^ rhs))
             }
 
-            BinaryOpKind::Eq => Ok(Object::new(ObjectValue::Troof(
-                match (&*lhs.get(), &*rhs.get()) {
-                    (ObjectValue::Noob, ObjectValue::Noob) => true,
-                    (ObjectValue::Numbr(x), ObjectValue::Numbr(y)) => x == y,
-                    (ObjectValue::Numbar(x), ObjectValue::Numbar(y)) => x == y,
-                    (ObjectValue::Troof(x), ObjectValue::Troof(y)) => x == y,
-                    (ObjectValue::Yarn(x), ObjectValue::Yarn(y)) => x == y,
-                    _ => {
-                        return Err(Error::CantApplyBinaryOp {
-                            loc,
-                            kind,
-                            lhs: lhs.get().typ(),
-                            rhs: rhs.get().typ(),
-                        })
-                    }
-                },
-            ))),
+            BinaryOpKind::Eq => Ok(Object::Troof(match (&lhs, &rhs) {
+                (Object::Noob, Object::Noob) => true,
+                (Object::Numbr(x), Object::Numbr(y)) => x == y,
+                (Object::Numbar(x), Object::Numbar(y)) => x == y,
+                (Object::Troof(x), Object::Troof(y)) => x == y,
+                (Object::Yarn(x), Object::Yarn(y)) => x == y,
+                _ => {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
+                    })
+                }
+            })),
 
-            BinaryOpKind::NotEq => Ok(Object::new(ObjectValue::Troof(
-                match (&*lhs.get(), &*rhs.get()) {
-                    (ObjectValue::Noob, ObjectValue::Noob) => false,
-                    (ObjectValue::Numbr(x), ObjectValue::Numbr(y)) => x != y,
-                    (ObjectValue::Numbar(x), ObjectValue::Numbar(y)) => x != y,
-                    (ObjectValue::Troof(x), ObjectValue::Troof(y)) => x != y,
-                    (ObjectValue::Yarn(x), ObjectValue::Yarn(y)) => x != y,
-                    _ => {
-                        return Err(Error::CantApplyBinaryOp {
-                            loc,
-                            kind,
-                            lhs: lhs.get().typ(),
-                            rhs: rhs.get().typ(),
-                        })
-                    }
-                },
-            ))),
+            BinaryOpKind::NotEq => Ok(Object::Troof(match (&lhs, &rhs) {
+                (Object::Noob, Object::Noob) => false,
+                (Object::Numbr(x), Object::Numbr(y)) => x != y,
+                (Object::Numbar(x), Object::Numbar(y)) => x != y,
+                (Object::Troof(x), Object::Troof(y)) => x != y,
+                (Object::Yarn(x), Object::Yarn(y)) => x != y,
+                _ => {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc,
+                        kind,
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
+                    })
+                }
+            })),
         }
     }
 
-    pub fn eval_block(&mut self, block: &[Stmt], scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_block(&mut self, block: &Block, scope: &SharedScope) -> Result<(), Error> {
         block
             .iter()
             .try_for_each(|stmt| self.eval_stmt(stmt, scope))
     }
 
-    pub fn cast_string(&mut self, loc: Loc, value: &ObjectValue) -> Result<String, Error> {
+    pub fn cast_string(&mut self, loc: Loc, value: &Object) -> Result<String, Error> {
         let res = match value {
-            ObjectValue::Noob => "NOOB".into(),
-            ObjectValue::Troof(x) => x.to_string(),
-            ObjectValue::Numbr(x) => x.to_string(),
-            ObjectValue::Numbar(x) => x.to_string(),
-            ObjectValue::Yarn(x) => x.clone(),
+            Object::Noob => "NOOB".into(),
+            Object::Troof(x) => x.to_string(),
+            Object::Numbr(x) => x.to_string(),
+            Object::Numbar(x) => x.to_string(),
+            Object::Yarn(x) => x.to_string(),
             _ => {
                 return Err(Error::CantCast {
                     loc,
@@ -636,13 +622,13 @@ impl Interpreter {
         Ok(res)
     }
 
-    pub fn cast_bool(&mut self, loc: Loc, value: &ObjectValue) -> Result<bool, Error> {
+    pub fn cast_bool(&mut self, loc: Loc, value: &Object) -> Result<bool, Error> {
         let res = match value {
-            ObjectValue::Noob => false,
-            &ObjectValue::Troof(value) => value,
-            &ObjectValue::Numbr(value) => value != 0,
-            &ObjectValue::Numbar(value) => value != 0.,
-            ObjectValue::Yarn(value) => !value.is_empty(),
+            Object::Noob => false,
+            &Object::Troof(value) => value,
+            &Object::Numbr(value) => value != 0,
+            &Object::Numbar(value) => value != 0.,
+            Object::Yarn(value) => !value.is_empty(),
             _ => {
                 return Err(Error::CantCast {
                     loc,
@@ -655,10 +641,10 @@ impl Interpreter {
         Ok(res)
     }
 
-    pub fn cast_float(&mut self, loc: Loc, value: &ObjectValue) -> Result<f64, Error> {
+    pub fn cast_float(&mut self, loc: Loc, value: &Object) -> Result<f64, Error> {
         let res = match *value {
-            ObjectValue::Numbr(value) => value as f64,
-            ObjectValue::Numbar(value) => value,
+            Object::Numbr(value) => value as f64,
+            Object::Numbar(value) => value,
             _ => {
                 return Err(Error::CantCast {
                     loc,
@@ -669,6 +655,113 @@ impl Interpreter {
         };
 
         Ok(res)
+    }
+
+    pub fn assign(
+        &mut self,
+        target: &Ident,
+        object: Object,
+        scope: &SharedScope,
+    ) -> Result<(), Error> {
+        fn helper(
+            me: &mut Interpreter,
+            target: &Ident,
+            object: Object,
+            scope: &SharedScope,
+            original_scope: &SharedScope,
+        ) -> Result<(), Error> {
+            match target {
+                Ident::Lit { name, loc } => scope
+                    .assign(name, object)
+                    .map_err(|err| Error::Scope(loc.clone(), err)),
+                Ident::Srs { expr, loc } => {
+                    let object = me.eval_expr(expr, original_scope)?;
+                    let name = me.cast_string(loc.clone(), &object)?;
+                    scope
+                        .assign(&name, object)
+                        .map_err(|err| Error::Scope(loc.clone(), err))
+                }
+                Ident::Access { parent, slot, .. } => {
+                    let parent_scope = me.eval_scope(parent, scope)?;
+                    helper(me, slot, object, &parent_scope, original_scope)
+                }
+            }
+        }
+
+        helper(self, target, object, scope, scope)
+    }
+
+    pub fn define(
+        &mut self,
+        target: &Ident,
+        value: Object,
+        original_scope: &SharedScope,
+    ) -> Result<(), Error> {
+        fn helper(
+            me: &mut Interpreter,
+            target: &Ident,
+            value: Object,
+            scope: &SharedScope,
+            original_scope: &SharedScope,
+        ) -> Result<(), Error> {
+            match target {
+                Ident::Lit { name, loc } => scope
+                    .define(name.to_string(), value)
+                    .map_err(|err| Error::Scope(loc.clone(), err)),
+
+                Ident::Srs { expr, loc } => {
+                    let object = me.eval_expr(expr, original_scope)?;
+                    let name = me.cast_string(loc.clone(), &object)?;
+                    scope
+                        .define(name, value)
+                        .map_err(|err| Error::Scope(loc.clone(), err))
+                }
+
+                Ident::Access { parent, slot, .. } => {
+                    let parent_scope = me.eval_scope(parent, scope)?;
+                    helper(me, slot, value, &parent_scope, original_scope)
+                }
+            }
+        }
+
+        helper(self, target, value, original_scope, original_scope)
+    }
+
+    // NOTE: assign / define
+    pub fn insert(
+        &mut self,
+        target: &Ident,
+        value: Object,
+        original_scope: &SharedScope,
+    ) -> Result<(), Error> {
+        fn helper(
+            me: &mut Interpreter,
+            target: &Ident,
+            value: Object,
+            scope: &SharedScope,
+            original_scope: &SharedScope,
+        ) -> Result<(), Error> {
+            match target {
+                Ident::Lit { name, .. } => {
+                    scope.insert(name.to_string(), value);
+                    Ok(())
+                }
+
+                Ident::Srs { expr, loc } => {
+                    let object = me.eval_expr(expr, original_scope)?;
+                    let name = me.cast_string(loc.clone(), &object)?;
+                    scope.insert(name, object);
+                    Ok(())
+                }
+
+                Ident::Access { parent, slot, .. } => {
+                    let parent_scope = me.eval_scope(parent, scope)?;
+                    helper(me, slot, value, &parent_scope, original_scope)
+                }
+            }
+        }
+
+        helper(self, target, value, original_scope, original_scope)
     }
 }
 
@@ -705,14 +798,14 @@ pub enum Error {
         dst: ObjectType,
     },
 
-    #[error("{0}: variable `{1}` is not of type BUKKIT")]
-    NotABukkit(Loc, String),
+    #[error("{}: variable `{}` is not of type BUKKIT", ._0.loc(), ._0)]
+    NotABukkit(Ident),
 
-    #[error("{0}: variable `{1} is not callable")]
-    NotCallable(Loc, String),
+    #[error("{}: variable `{} is not callable", ._0.loc(), ._0)]
+    NotCallable(Ident),
 
-    #[error("{0}: loop variable `{1}` is not a NUMBR")]
-    LoopVarNotNumbr(Loc, String),
+    #[error("{}: loop variable `{}` is not a NUMBR", ._0.loc(), ._0)]
+    LoopVarNotNumbr(Ident),
 
     #[error("{loc}: unexpected amount of parameters, expected {required} but got {given}")]
     UnexpectedAmountOfParams {
@@ -728,9 +821,6 @@ pub enum Error {
         lhs: ObjectType,
         rhs: ObjectType,
     },
-
-    #[error("{0}: no parent in the current scope")]
-    NoParent(Loc),
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {

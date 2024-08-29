@@ -1,31 +1,10 @@
 use derive_more::Display;
 
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::ast::{Block, FuncArg};
 use crate::scope::SharedScope;
-
-#[derive(Debug, Clone, Default)]
-pub struct Object(Arc<RwLock<ObjectValue>>);
-
-impl Object {
-    pub fn new(value: ObjectValue) -> Self {
-        Self(Arc::new(RwLock::new(value)))
-    }
-
-    pub fn set(&self, value: ObjectValue) {
-        *self.0.write().unwrap() = value
-    }
-
-    pub fn get(&self) -> impl Deref<Target = ObjectValue> + '_ {
-        self.0.read().unwrap()
-    }
-
-    pub fn get_mut(&self) -> impl DerefMut<Target = ObjectValue> + '_ {
-        self.0.write().unwrap()
-    }
-}
 
 #[derive(Debug, Clone, Copy, Display)]
 pub enum ObjectType {
@@ -52,18 +31,18 @@ pub enum ObjectType {
 }
 
 #[derive(Debug, Clone, Default)]
-pub enum ObjectValue {
+pub enum Object {
     #[default]
     Noob,
     Troof(bool),
     Numbr(i64),
     Numbar(f64),
-    Yarn(String),
-    Bukkit(Bukkit),
-    Funkshun(Funkshun),
+    Yarn(Arc<str>),
+    Bukkit(Arc<Bukkit>),
+    Funkshun(Arc<Funkshun>),
 }
 
-impl ObjectValue {
+impl Object {
     pub fn typ(&self) -> ObjectType {
         match self {
             Self::Noob => ObjectType::Noob,
@@ -97,15 +76,15 @@ impl ObjectValue {
     }
 
     pub fn default_bukkit(parent: SharedScope) -> Self {
-        Self::Bukkit(Bukkit::new(parent))
+        Self::Bukkit(Arc::new(Bukkit::new(parent)))
     }
 
     pub fn default_funkshun(scope: SharedScope) -> Self {
-        Self::Funkshun(Funkshun {
+        Self::Funkshun(Arc::new(Funkshun {
             scope,
             args: Default::default(),
             block: Default::default(),
-        })
+        }))
     }
 
     pub fn as_noob(&self) -> Option<()> {
@@ -162,7 +141,7 @@ impl ObjectValue {
 
     /// Returns `true` if the object value is [`Noob`].
     ///
-    /// [`Noob`]: ObjectValue::Noob
+    /// [`Noob`]: Object::Noob
     #[must_use]
     pub fn is_noob(&self) -> bool {
         matches!(self, Self::Noob)
@@ -170,7 +149,7 @@ impl ObjectValue {
 
     /// Returns `true` if the object value is [`Troof`].
     ///
-    /// [`Troof`]: ObjectValue::Troof
+    /// [`Troof`]: Object::Troof
     #[must_use]
     pub fn is_troof(&self) -> bool {
         matches!(self, Self::Troof(..))
@@ -178,7 +157,7 @@ impl ObjectValue {
 
     /// Returns `true` if the object value is [`Numbr`].
     ///
-    /// [`Numbr`]: ObjectValue::Numbr
+    /// [`Numbr`]: Object::Numbr
     #[must_use]
     pub fn is_numbr(&self) -> bool {
         matches!(self, Self::Numbr(..))
@@ -186,7 +165,7 @@ impl ObjectValue {
 
     /// Returns `true` if the object value is [`Numbar`].
     ///
-    /// [`Numbar`]: ObjectValue::Numbar
+    /// [`Numbar`]: Object::Numbar
     #[must_use]
     pub fn is_numbar(&self) -> bool {
         matches!(self, Self::Numbar(..))
@@ -194,7 +173,7 @@ impl ObjectValue {
 
     /// Returns `true` if the object value is [`Yarn`].
     ///
-    /// [`Yarn`]: ObjectValue::Yarn
+    /// [`Yarn`]: Object::Yarn
     #[must_use]
     pub fn is_yarn(&self) -> bool {
         matches!(self, Self::Yarn(..))
@@ -202,7 +181,7 @@ impl ObjectValue {
 
     /// Returns `true` if the object value is [`Bukkit`].
     ///
-    /// [`Bukkit`]: ObjectValue::Bukkit
+    /// [`Bukkit`]: Object::Bukkit
     #[must_use]
     pub fn is_bukkit(&self) -> bool {
         matches!(self, Self::Bukkit(..))
@@ -210,7 +189,7 @@ impl ObjectValue {
 
     /// Returns `true` if the object value is [`Funkshun`].
     ///
-    /// [`Funkshun`]: ObjectValue::Funkshun
+    /// [`Funkshun`]: Object::Funkshun
     #[must_use]
     pub fn is_funkshun(&self) -> bool {
         matches!(self, Self::Funkshun(..))
@@ -228,6 +207,10 @@ impl Bukkit {
         Self {
             inner_scope: SharedScope::new(Some(parent)),
         }
+    }
+
+    pub fn from_scope(inner_scope: SharedScope) -> Self {
+        Self { inner_scope }
     }
 
     pub fn scope(&self) -> &SharedScope {
@@ -253,6 +236,6 @@ impl DerefMut for Bukkit {
 pub struct Funkshun {
     // the scope where the funkshun is defined is the parent scope
     pub scope: SharedScope,
-    pub args: Vec<FuncArg>,
+    pub args: Arc<[FuncArg]>,
     pub block: Arc<Block>,
 }
