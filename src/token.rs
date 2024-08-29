@@ -150,15 +150,6 @@ impl TokenKind {
         Self::BLOCK_TERM.contains(self)
     }
 
-    pub fn is_seperator(&self) -> bool {
-        Self::SEPERATORS.contains(self)
-    }
-
-    pub fn is_valid(&self) -> bool {
-        use TokenKind::*;
-        !matches!(self, Eof | Invalid)
-    }
-
     pub fn is_ident(&self) -> bool {
         use TokenKind::*;
         matches!(self, Ident | Srs)
