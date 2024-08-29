@@ -1,3 +1,4 @@
+use std::num::ParseIntError;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -266,7 +267,7 @@ impl Interpreter {
             Expr::Bool(BoolLit { value, .. }) => Ok(Object::Troof(*value)),
             Expr::Int(IntLit { value, .. }) => Ok(Object::Numbr(*value)),
             Expr::Float(FloatLit { value, .. }) => Ok(Object::Numbar(*value)),
-            Expr::String(StringLit { value, .. }) => Ok(Object::Yarn(value.clone())),
+            Expr::String(StringLit { value, loc }) => Ok(Object::Yarn(self.escape_string(loc, value, scope)?)),
             Expr::Noob(NoobLit { .. }) => Ok(Object::Noob),
             Expr::Ident(ident) => self.eval_ident(ident, scope),
             Expr::FuncCall(FuncCall {
@@ -763,6 +764,57 @@ impl Interpreter {
 
         helper(self, target, value, original_scope, original_scope)
     }
+
+    pub fn escape_string(&mut self, loc: &Loc, input: &str, scope: &SharedScope) -> Result<Arc<str>, Error> {
+        let mut output = String::new();
+
+        let mut iter = input.chars();
+        while let Some(mut c) = iter.next() {
+            if c == ':' {
+                let code = iter.next().unwrap_or_default();
+                c = match code {
+                    ')' => '\n',
+                    '>' => '\t',
+                    'o' => 0x07 as char, // bell ansi code
+                    '(' => {
+                        let Some((content, after)) = iter.as_str().split_once(')') else {
+                            return Err(Error::UnclosedParenLiteral(loc.clone()))
+                        };
+
+                        iter = after.chars();
+
+                        let content = content.trim_start_matches("0x");
+                        let code = u32::from_str_radix(content, 16).map_err(|err| Error::ParseInt(loc.clone(), err))?;
+                        let Some(c) = char::from_u32(code) else {
+                            return Err(Error::UnknownCharCode(loc.clone(), code));
+                        };
+
+                        c
+                    }
+
+                    '{' => {
+                        let Some((content, after)) = iter.as_str().split_once('}') else {
+                            return Err(Error::UnclosedBraceLiteral(loc.clone()))
+                        };
+
+                        iter = after.chars();
+
+                        let ident = Ident::Lit { name: content.into(), loc: loc.clone() };
+                        let object = self.eval_ident(&ident, scope)?;
+                        let text = self.cast_string(loc.clone(), &object)?;
+                        output.push_str(&text);
+                        continue
+                    }
+
+                    other => other,
+                };
+            };
+
+            output.push(c);
+        }
+
+        Ok(output.into())
+    }
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -821,6 +873,18 @@ pub enum Error {
         lhs: ObjectType,
         rhs: ObjectType,
     },
+
+    #[error("{0}: unclosed parentheses in string literal")]
+    UnclosedParenLiteral(Loc),
+
+    #[error("{0}: unclosed brace in string literal")]
+    UnclosedBraceLiteral(Loc),
+
+    #[error("{0}: {1}")]
+    ParseInt(Loc, ParseIntError),
+
+    #[error("{0}: unknown char code `{1:#x}` ({1})")]
+    UnknownCharCode(Loc, u32)
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {

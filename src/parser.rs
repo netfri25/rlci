@@ -836,27 +836,6 @@ fn expected_one_of_msg(expected: &[TokenKind], got: &TokenKind) -> String {
     buf
 }
 
-fn escape_string(input: &str) -> Arc<str> {
-    let mut output = String::new();
-
-    let mut iter = input.chars();
-    while let Some(mut c) = iter.next() {
-        if c == ':' {
-            let code = iter.next().unwrap_or_default();
-            c = match code {
-                ')' => '\n',
-                '>' => '\t',
-                'o' => 0x07 as char, // bell ansi code
-                other => other,
-            };
-        };
-
-        output.push(c);
-    }
-
-    output.into()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
