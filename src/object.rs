@@ -42,6 +42,22 @@ pub enum Object {
     Funkshun(Arc<Funkshun>),
 }
 
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Object::Noob, Object::Noob) => true,
+            (Object::Numbr(x), Object::Numbr(y)) => x == y,
+            (Object::Numbar(x), Object::Numbar(y)) => x == y,
+            (Object::Troof(x), Object::Troof(y)) => x == y,
+            (Object::Yarn(x), Object::Yarn(y)) => x == y,
+            (Object::Bukkit(x), Object::Bukkit(y)) => std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y)),
+            (Object::Funkshun(x), Object::Funkshun(y)) => std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y)),
+            _ => false
+        }
+    }
+}
+
+#[allow(dead_code)]
 impl Object {
     pub fn typ(&self) -> ObjectType {
         match self {
