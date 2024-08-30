@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::ast::*;
 use crate::lexer::Lexer;
+use crate::object::ObjectType;
 use crate::token::{Loc, Token, TokenKind};
 
 pub fn parse(input: &str, path: &(impl AsRef<Path> + ?Sized)) -> Result<Module, Vec<Error>> {
@@ -539,13 +540,13 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> Option<Type> {
         let Token { loc, kind, .. } = self.expect_many(TokenKind::TYPES)?;
         let typ = match kind {
-            TokenKind::Noob => Type::Noob { loc },
-            TokenKind::Troof => Type::Troof { loc },
-            TokenKind::Numbr => Type::Numbr { loc },
-            TokenKind::Numbar => Type::Numbar { loc },
-            TokenKind::Yarn => Type::Yarn { loc },
-            TokenKind::Bukkit => Type::Bukkit { loc },
-            TokenKind::Funkshun => Type::Funkshun { loc },
+            TokenKind::Noob => Type { loc, typ: ObjectType::Noob },
+            TokenKind::Troof => Type { loc, typ: ObjectType::Troof },
+            TokenKind::Numbr => Type { loc, typ: ObjectType::Numbr },
+            TokenKind::Numbar => Type { loc, typ: ObjectType::Numbar },
+            TokenKind::Yarn => Type { loc, typ: ObjectType::Yarn },
+            TokenKind::Bukkit => Type { loc, typ: ObjectType::Bukkit },
+            TokenKind::Funkshun => Type { loc, typ: ObjectType::Funkshun },
             _ => unreachable!(),
         };
 
@@ -838,6 +839,8 @@ fn expected_one_of_msg(expected: &[TokenKind], got: &TokenKind) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::object::ObjectType;
+
     use super::*;
     use pretty_assertions::assert_eq;
 
@@ -894,7 +897,7 @@ mod tests {
                     loc: loc!(),
                     scope: ident("I"),
                     name: ident("var"),
-                    init: init_type(Type::Troof { loc: loc!() }),
+                    init: init_type(Type { loc: loc!(), typ: ObjectType::Troof }),
                 }),
                 Stmt::Declare(Declare {
                     loc: loc!(),

@@ -1,9 +1,9 @@
 use derive_more::Display;
 use diff_enum::common_fields;
 
-use std::fmt;
 use std::sync::Arc;
 
+use crate::object::ObjectType;
 use crate::token::Loc;
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -77,31 +77,11 @@ pub enum Ident {
     },
 }
 
-#[common_fields { loc: Loc }]
-#[derive(Debug, Clone, PartialEq)]
-pub enum Type {
-    Noob,
-    Troof,
-    Numbr,
-    Numbar,
-    Yarn,
-    Bukkit,
-    Funkshun,
-}
-
-impl fmt::Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let text = match self {
-            Self::Noob { .. } => "NOOB",
-            Self::Troof { .. } => "TROOF",
-            Self::Numbr { .. } => "NUMBR",
-            Self::Numbar { .. } => "NUMBAR",
-            Self::Yarn { .. } => "YARN",
-            Self::Bukkit { .. } => "BUKKIT",
-            Self::Funkshun { .. } => "BUKKIT",
-        };
-        write!(f, "{}", text)
-    }
+#[derive(Debug, Clone, PartialEq, Display)]
+#[display("{typ}")]
+pub struct Type {
+    pub loc: Loc,
+    pub typ: ObjectType,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]

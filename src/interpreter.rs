@@ -1,4 +1,4 @@
-use std::num::ParseIntError;
+use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
@@ -35,7 +35,7 @@ impl Interpreter {
 
     pub fn eval_stmt(&mut self, stmt: &Stmt, scope: &SharedScope) -> Result<(), Error> {
         match stmt {
-            Stmt::Cast(_) => todo!(),
+            Stmt::Cast(cast) => self.eval_cast_stmt(cast, scope),
             Stmt::Print(print) => self.eval_print(print, scope),
             Stmt::Input(input) => self.eval_input(input, scope),
             Stmt::Assign(assign) => self.eval_assign(assign, scope),
@@ -58,10 +58,16 @@ impl Interpreter {
         }
     }
 
+    pub fn eval_cast_stmt(&mut self, CastStmt { loc, who, to }: &CastStmt, scope: &SharedScope) -> Result<(), Error> {
+        let object = self.eval_ident(who, scope)?;
+        let result = self.apply_cast(loc, &object, to.typ)?;
+        self.assign(who, result, scope)
+    }
+
     pub fn eval_print(&mut self, print: &Print, scope: &SharedScope) -> Result<(), Error> {
         let loc = print.loc();
         let value = self.eval_expr(print.expr(), scope)?;
-        let text = self.cast_string(loc.clone(), &value)?;
+        let text = self.cast_string(loc, &value)?;
         match print {
             Print::Visible { .. } => println!("{}", text),
             Print::Invisible { .. } => eprintln!("{}", text),
@@ -94,14 +100,17 @@ impl Interpreter {
         let object = match &declare.init {
             None => Object::default_noob(),
             Some(Init::Expr { expr, .. }) => self.eval_expr(expr, scope)?,
-            Some(Init::Type { typ, .. }) => match typ {
-                Type::Noob { .. } => Object::default_noob(),
-                Type::Troof { .. } => Object::default_troof(),
-                Type::Numbr { .. } => Object::default_numbr(),
-                Type::Numbar { .. } => Object::default_numbar(),
-                Type::Yarn { .. } => Object::default_yarn(),
-                Type::Bukkit { .. } => Object::default_bukkit(scope.clone()),
-                Type::Funkshun { .. } => Object::default_funkshun(scope.clone()),
+            Some(Init::Type {
+                typ: Type { typ, .. },
+                ..
+            }) => match typ {
+                ObjectType::Noob => Object::default_noob(),
+                ObjectType::Troof => Object::default_troof(),
+                ObjectType::Numbr => Object::default_numbr(),
+                ObjectType::Numbar => Object::default_numbar(),
+                ObjectType::Yarn => Object::default_yarn(),
+                ObjectType::Bukkit => Object::default_bukkit(scope.clone()),
+                ObjectType::Funkshun => Object::default_funkshun(scope.clone()),
             },
             Some(Init::Like { target, loc }) => {
                 let define_scope = &self.eval_scope(&declare.scope, scope)?;
@@ -121,7 +130,7 @@ impl Interpreter {
 
     pub fn eval_cond(&mut self, cond: &Cond, scope: &SharedScope) -> Result<(), Error> {
         let it = scope.get_it();
-        let condition = self.cast_bool(cond.loc.clone(), &it)?;
+        let condition = self.cast_bool(&cond.loc, &it)?;
 
         if condition {
             return self.eval_block(&cond.then, scope);
@@ -129,7 +138,7 @@ impl Interpreter {
 
         for else_if in cond.else_if.iter() {
             let object = self.eval_expr(&else_if.cond, scope)?;
-            let condition = self.cast_bool(else_if.loc.clone(), &object)?;
+            let condition = self.cast_bool(&else_if.loc, &object)?;
             if condition {
                 return self.eval_block(&else_if.then, scope);
             }
@@ -183,7 +192,7 @@ impl Interpreter {
             let scope = &SharedScope::new(Some(loop_scope.clone()));
             if let Some(ref guard) = looop.guard {
                 let cond = self.eval_expr(guard.cond(), scope)?;
-                let troof = self.cast_bool(guard.cond().loc().clone(), &cond)?;
+                let troof = self.cast_bool(guard.cond().loc(), &cond)?;
                 match guard {
                     LoopGuard::Til { .. } if troof => break,
                     LoopGuard::Wile { .. } if !troof => break,
@@ -294,7 +303,7 @@ impl Interpreter {
 
     pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
         match expr {
-            Expr::Cast(_) => todo!(),
+            Expr::Cast(cast) => self.eval_cast_expr(cast, scope),
             Expr::Bool(BoolLit { value, .. }) => Ok(Object::Troof(*value)),
             Expr::Int(IntLit { value, .. }) => Ok(Object::Numbr(*value)),
             Expr::Float(FloatLit { value, .. }) => Ok(Object::Numbar(*value)),
@@ -317,6 +326,15 @@ impl Interpreter {
         }
     }
 
+    pub fn eval_cast_expr(
+        &mut self,
+        cast: &CastExpr,
+        scope: &SharedScope,
+    ) -> Result<Object, Error> {
+        let object = self.eval_expr(&cast.expr, scope)?;
+        self.apply_cast(&cast.loc, &object, cast.typ.typ)
+    }
+
     pub fn eval_ident(&mut self, ident: &Ident, scope: &SharedScope) -> Result<Object, Error> {
         fn eval_ident_help(
             me: &mut Interpreter,
@@ -328,7 +346,7 @@ impl Interpreter {
                 Ident::Lit { name, .. } => name.to_string(),
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, start_scope)?;
-                    me.cast_string(loc.clone(), &object)?
+                    me.cast_string(loc, &object)?
                 }
                 Ident::Access { parent, slot, .. } => {
                     let parent_scope = me.eval_scope(parent, scope)?;
@@ -408,7 +426,7 @@ impl Interpreter {
         let value = self.eval_expr(&unary_op.expr, scope)?;
         match &unary_op.kind {
             UnaryOpKind::Not => {
-                let value = self.cast_bool(unary_op.loc.clone(), &value)?;
+                let value = self.cast_bool(&unary_op.loc, &value)?;
                 Ok(Object::Troof(!value))
             }
         }
@@ -428,14 +446,14 @@ impl Interpreter {
         let is_rhs_float = rhs.is_numbar();
         let is_rhs_num = is_rhs_float || rhs.is_numbr();
 
-        let loc = binary_op.loc.clone();
+        let loc = &binary_op.loc;
         let kind = binary_op.kind;
 
         match kind {
             BinaryOpKind::Add => {
                 if !is_lhs_num || !is_rhs_num {
                     return Err(Error::CantApplyBinaryOp {
-                        loc,
+                        loc: loc.clone(),
                         kind,
                         lhs: lhs.typ(),
                         rhs: rhs.typ(),
@@ -443,8 +461,8 @@ impl Interpreter {
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs)?;
-                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
                     Ok(Object::Numbar(lhs + rhs))
                 } else {
                     let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
@@ -456,7 +474,7 @@ impl Interpreter {
             BinaryOpKind::Sub => {
                 if !is_lhs_num || !is_rhs_num {
                     return Err(Error::CantApplyBinaryOp {
-                        loc,
+                        loc: loc.clone(),
                         kind,
                         lhs: lhs.typ(),
                         rhs: rhs.typ(),
@@ -464,8 +482,8 @@ impl Interpreter {
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs)?;
-                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
                     Ok(Object::Numbar(lhs - rhs))
                 } else {
                     let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
@@ -477,7 +495,7 @@ impl Interpreter {
             BinaryOpKind::Mul => {
                 if !is_lhs_num || !is_rhs_num {
                     return Err(Error::CantApplyBinaryOp {
-                        loc,
+                        loc: loc.clone(),
                         kind,
                         lhs: lhs.typ(),
                         rhs: rhs.typ(),
@@ -485,8 +503,8 @@ impl Interpreter {
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs)?;
-                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
                     Ok(Object::Numbar(lhs * rhs))
                 } else {
                     let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
@@ -498,7 +516,7 @@ impl Interpreter {
             BinaryOpKind::Div => {
                 if !is_lhs_num || !is_rhs_num {
                     return Err(Error::CantApplyBinaryOp {
-                        loc,
+                        loc: loc.clone(),
                         kind,
                         lhs: lhs.typ(),
                         rhs: rhs.typ(),
@@ -506,8 +524,8 @@ impl Interpreter {
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs)?;
-                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
                     Ok(Object::Numbar(lhs / rhs))
                 } else {
                     let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
@@ -519,7 +537,7 @@ impl Interpreter {
             BinaryOpKind::Mod => {
                 if !is_lhs_num || !is_rhs_num {
                     return Err(Error::CantApplyBinaryOp {
-                        loc,
+                        loc: loc.clone(),
                         kind,
                         lhs: lhs.typ(),
                         rhs: rhs.typ(),
@@ -527,8 +545,8 @@ impl Interpreter {
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs)?;
-                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
                     Ok(Object::Numbar(lhs % rhs))
                 } else {
                     let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
@@ -540,7 +558,7 @@ impl Interpreter {
             BinaryOpKind::Max => {
                 if !is_lhs_num || !is_rhs_num {
                     return Err(Error::CantApplyBinaryOp {
-                        loc,
+                        loc: loc.clone(),
                         kind,
                         lhs: lhs.typ(),
                         rhs: rhs.typ(),
@@ -548,8 +566,8 @@ impl Interpreter {
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs)?;
-                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
                     Ok(Object::Numbar(lhs.max(rhs)))
                 } else {
                     let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
@@ -561,7 +579,7 @@ impl Interpreter {
             BinaryOpKind::Min => {
                 if !is_lhs_num || !is_rhs_num {
                     return Err(Error::CantApplyBinaryOp {
-                        loc,
+                        loc: loc.clone(),
                         kind,
                         lhs: lhs.typ(),
                         rhs: rhs.typ(),
@@ -569,8 +587,8 @@ impl Interpreter {
                 }
 
                 if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc.clone(), &lhs)?;
-                    let rhs = self.cast_float(loc.clone(), &rhs)?;
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
                     Ok(Object::Numbar(lhs.min(rhs)))
                 } else {
                     let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
@@ -580,20 +598,20 @@ impl Interpreter {
             }
 
             BinaryOpKind::And => {
-                let lhs = self.cast_bool(loc.clone(), &lhs)?;
-                let rhs = self.cast_bool(loc.clone(), &rhs)?;
+                let lhs = self.cast_bool(loc, &lhs)?;
+                let rhs = self.cast_bool(loc, &rhs)?;
                 Ok(Object::Troof(lhs && rhs))
             }
 
             BinaryOpKind::Or => {
-                let lhs = self.cast_bool(loc.clone(), &lhs)?;
-                let rhs = self.cast_bool(loc.clone(), &rhs)?;
+                let lhs = self.cast_bool(loc, &lhs)?;
+                let rhs = self.cast_bool(loc, &rhs)?;
                 Ok(Object::Troof(lhs || rhs))
             }
 
             BinaryOpKind::Xor => {
-                let lhs = self.cast_bool(loc.clone(), &lhs)?;
-                let rhs = self.cast_bool(loc.clone(), &rhs)?;
+                let lhs = self.cast_bool(loc, &lhs)?;
+                let rhs = self.cast_bool(loc, &rhs)?;
                 Ok(Object::Troof(lhs ^ rhs))
             }
 
@@ -611,7 +629,7 @@ impl Interpreter {
             NaryOpKind::All => {
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
-                    let value = self.cast_bool(param.loc().clone(), &object)?;
+                    let value = self.cast_bool(param.loc(), &object)?;
                     if !value {
                         return Ok(Object::Troof(false));
                     }
@@ -623,7 +641,7 @@ impl Interpreter {
             NaryOpKind::Any => {
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
-                    let value = self.cast_bool(param.loc().clone(), &object)?;
+                    let value = self.cast_bool(param.loc(), &object)?;
                     if value {
                         return Ok(Object::Troof(true));
                     }
@@ -636,7 +654,7 @@ impl Interpreter {
                 let mut output = String::new();
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
-                    output += &self.cast_string(param.loc().clone(), &object)?;
+                    output += &self.cast_string(param.loc(), &object)?;
                 }
 
                 Ok(Object::Yarn(output.into()))
@@ -650,7 +668,7 @@ impl Interpreter {
         scope: &SharedScope,
     ) -> Result<Object, Error> {
         let object = self.eval_expr(&system_cmd.cmd, scope)?;
-        let cmd = self.cast_string(system_cmd.loc.clone(), &object)?;
+        let cmd = self.cast_string(&system_cmd.loc, &object)?;
         let mut args = cmd.split(' ');
         Command::new(args.next().unwrap_or_default())
             .args(args)
@@ -665,26 +683,29 @@ impl Interpreter {
             .try_for_each(|stmt| self.eval_stmt(stmt, scope))
     }
 
-    pub fn cast_string(&mut self, loc: Loc, value: &Object) -> Result<String, Error> {
-        let res = match value {
-            Object::Noob => "NOOB".into(),
-            Object::Troof(x) => x.to_string(),
-            Object::Numbr(x) => x.to_string(),
-            Object::Numbar(x) => x.to_string(),
-            Object::Yarn(x) => x.to_string(),
-            _ => {
-                return Err(Error::CantCast {
-                    loc,
-                    src: value.typ(),
-                    dst: ObjectType::Yarn,
-                })
-            }
-        };
-
-        Ok(res)
+    pub fn apply_cast(
+        &mut self,
+        loc: &Loc,
+        object: &Object,
+        typ: ObjectType,
+    ) -> Result<Object, Error> {
+        match typ {
+            ObjectType::Noob => Ok(Object::Noob),
+            ObjectType::Troof => self.cast_bool(loc, object).map(Object::Troof),
+            ObjectType::Numbr => self.cast_int(loc, object).map(Object::Numbr),
+            ObjectType::Numbar => self.cast_float(loc, object).map(Object::Numbar),
+            ObjectType::Yarn => self
+                .cast_string(loc, object)
+                .map(|s| Object::Yarn(s.into())),
+            _ => Err(Error::CantCast {
+                loc: loc.clone(),
+                src: object.typ(),
+                dst: typ,
+            }),
+        }
     }
 
-    pub fn cast_bool(&mut self, loc: Loc, value: &Object) -> Result<bool, Error> {
+    pub fn cast_bool(&mut self, loc: &Loc, value: &Object) -> Result<bool, Error> {
         let res = match value {
             Object::Noob => false,
             &Object::Troof(value) => value,
@@ -693,7 +714,7 @@ impl Interpreter {
             Object::Yarn(value) => !value.is_empty(),
             _ => {
                 return Err(Error::CantCast {
-                    loc,
+                    loc: loc.clone(),
                     src: value.typ(),
                     dst: ObjectType::Troof,
                 })
@@ -703,15 +724,60 @@ impl Interpreter {
         Ok(res)
     }
 
-    pub fn cast_float(&mut self, loc: Loc, value: &Object) -> Result<f64, Error> {
-        let res = match *value {
-            Object::Numbr(value) => value as f64,
-            Object::Numbar(value) => value,
+    pub fn cast_int(&mut self, loc: &Loc, value: &Object) -> Result<i64, Error> {
+        let res = match value {
+            Object::Noob => 0,
+            Object::Troof(value) => *value as i64,
+            Object::Numbr(value) => *value,
+            Object::Numbar(value) => *value as i64,
+            Object::Yarn(value) => value
+                .parse()
+                .map_err(|err| Error::ParseInt(loc.clone(), err))?,
             _ => {
                 return Err(Error::CantCast {
-                    loc,
+                    loc: loc.clone(),
+                    src: value.typ(),
+                    dst: ObjectType::Numbr,
+                })
+            }
+        };
+
+        Ok(res)
+    }
+
+    pub fn cast_float(&mut self, loc: &Loc, value: &Object) -> Result<f64, Error> {
+        let res = match value {
+            Object::Noob => 0.,
+            Object::Troof(value) => *value as i64 as f64,
+            Object::Numbr(value) => *value as f64,
+            Object::Numbar(value) => *value,
+            Object::Yarn(value) => value
+                .parse()
+                .map_err(|err| Error::ParseFloat(loc.clone(), err))?,
+            _ => {
+                return Err(Error::CantCast {
+                    loc: loc.clone(),
                     src: value.typ(),
                     dst: ObjectType::Numbar,
+                })
+            }
+        };
+
+        Ok(res)
+    }
+
+    pub fn cast_string(&mut self, loc: &Loc, value: &Object) -> Result<String, Error> {
+        let res = match value {
+            Object::Noob => "NOOB".into(),
+            Object::Troof(x) => x.to_string(),
+            Object::Numbr(x) => x.to_string(),
+            Object::Numbar(x) => x.to_string(),
+            Object::Yarn(x) => x.to_string(),
+            _ => {
+                return Err(Error::CantCast {
+                    loc: loc.clone(),
+                    src: value.typ(),
+                    dst: ObjectType::Yarn,
                 })
             }
         };
@@ -738,7 +804,7 @@ impl Interpreter {
                     .map_err(|err| Error::Scope(loc.clone(), err)),
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, original_scope)?;
-                    let name = me.cast_string(loc.clone(), &object)?;
+                    let name = me.cast_string(loc, &object)?;
                     scope
                         .assign(&name, object)
                         .map_err(|err| Error::Scope(loc.clone(), err))
@@ -773,7 +839,7 @@ impl Interpreter {
 
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, original_scope)?;
-                    let name = me.cast_string(loc.clone(), &object)?;
+                    let name = me.cast_string(loc, &object)?;
                     scope
                         .define(name, value)
                         .map_err(|err| Error::Scope(loc.clone(), err))
@@ -811,7 +877,7 @@ impl Interpreter {
 
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, original_scope)?;
-                    let name = me.cast_string(loc.clone(), &object)?;
+                    let name = me.cast_string(loc, &object)?;
                     scope.insert(name, object);
                     Ok(())
                 }
@@ -871,7 +937,7 @@ impl Interpreter {
                             loc: loc.clone(),
                         };
                         let object = self.eval_ident(&ident, scope)?;
-                        let text = self.cast_string(loc.clone(), &object)?;
+                        let text = self.cast_string(loc, &object)?;
                         output.push_str(&text);
                         continue;
                     }
@@ -952,6 +1018,9 @@ pub enum Error {
 
     #[error("{0}: {1}")]
     ParseInt(Loc, ParseIntError),
+
+    #[error("{0}: {1}")]
+    ParseFloat(Loc, ParseFloatError),
 
     #[error("{0}: unknown char code `{1:#x}` ({1})")]
     UnknownCharCode(Loc, u32),

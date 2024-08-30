@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::ast::{Block, FuncArg};
 use crate::scope::SharedScope;
 
-#[derive(Debug, Clone, Copy, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Display)]
 pub enum ObjectType {
     #[display("NOOB")]
     Noob,
