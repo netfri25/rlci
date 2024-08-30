@@ -40,7 +40,7 @@ impl Interpreter {
             Stmt::Assign(assign) => self.eval_assign(assign, scope),
             Stmt::Declare(declare) => self.eval_declare(declare, scope),
             Stmt::Cond(cond) => self.eval_cond(cond, scope),
-            Stmt::Switch(_) => todo!(),
+            Stmt::Switch(switch) => self.eval_switch(switch, scope),
             Stmt::Loop(looop) => self.eval_loop(looop, scope),
             Stmt::FuncDef(func_def) => self.eval_func_def(func_def, scope),
             Stmt::ObjectDef(ObjectDef {
@@ -140,6 +140,35 @@ impl Interpreter {
 
         Ok(())
     }
+
+    pub fn eval_switch(&mut self, switch: &Switch, scope: &SharedScope) -> Result<(), Error> {
+        let it = scope.get_it();
+
+        let mut cases = switch.cases.iter().peekable();
+        while let Some(case) = cases.peek() {
+            let object = self.eval_expr(&case.expr, scope)?;
+            if it != object {
+                cases.next();
+            } else {
+                break
+            }
+        };
+
+        // no cases matching IT
+        if cases.peek().is_none() {
+            if let Some(ref default) = switch.default {
+                match self.eval_block(&default.block, scope) {
+                    Ok(()) | Err(Error::Break(_)) => {},
+                    Err(err) => return Err(err),
+                }
+            }
+
+            Ok(())
+        } else {
+            cases.flat_map(|case| case.block.iter()).try_for_each(|stmt| self.eval_stmt(stmt, scope))
+        }
+    }
+
 
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
         let loop_scope = &SharedScope::new(Some(scope.clone()));

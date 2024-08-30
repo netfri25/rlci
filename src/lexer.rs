@@ -169,7 +169,7 @@ impl<'a> Lexer<'a> {
             ("O HAI IM", OHaiIm),
             ("OIC", Oic),
             ("OMG", Omg),
-            ("OMG WTF", OmgWtf),
+            ("OMGWTF", OmgWtf),
             ("O RLY?", ORly),
             ("PRODUKT OF", ProduktOf),
             ("QUOSHUNT OF", QuoshuntOf),
