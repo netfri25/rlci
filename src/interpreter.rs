@@ -151,25 +151,26 @@ impl Interpreter {
             if it != object {
                 cases.next();
             } else {
-                break
+                break;
             }
-        };
+        }
 
         // no cases matching IT
         if cases.peek().is_none() {
             if let Some(ref default) = switch.default {
                 match self.eval_block(&default.block, scope) {
-                    Ok(()) | Err(Error::Break(_)) => {},
+                    Ok(()) | Err(Error::Break(_)) => {}
                     Err(err) => return Err(err),
                 }
             }
 
             Ok(())
         } else {
-            cases.flat_map(|case| case.block.iter()).try_for_each(|stmt| self.eval_stmt(stmt, scope))
+            cases
+                .flat_map(|case| case.block.iter())
+                .try_for_each(|stmt| self.eval_stmt(stmt, scope))
         }
     }
-
 
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
         let loop_scope = &SharedScope::new(Some(scope.clone()));
@@ -297,7 +298,9 @@ impl Interpreter {
             Expr::Bool(BoolLit { value, .. }) => Ok(Object::Troof(*value)),
             Expr::Int(IntLit { value, .. }) => Ok(Object::Numbr(*value)),
             Expr::Float(FloatLit { value, .. }) => Ok(Object::Numbar(*value)),
-            Expr::String(StringLit { value, loc }) => Ok(Object::Yarn(self.escape_string(loc, value, scope)?)),
+            Expr::String(StringLit { value, loc }) => {
+                Ok(Object::Yarn(self.escape_string(loc, value, scope)?))
+            }
             Expr::Noob(NoobLit { .. }) => Ok(Object::Noob),
             Expr::Ident(ident) => self.eval_ident(ident, scope),
             Expr::FuncCall(FuncCall {
@@ -599,31 +602,35 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_n_ary_op(&mut self, n_ary_op: &NaryOp, scope: &SharedScope) -> Result<Object, Error> {
+    pub fn eval_n_ary_op(
+        &mut self,
+        n_ary_op: &NaryOp,
+        scope: &SharedScope,
+    ) -> Result<Object, Error> {
         match n_ary_op.kind {
             NaryOpKind::All => {
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
                     let value = self.cast_bool(param.loc().clone(), &object)?;
                     if !value {
-                        return Ok(Object::Troof(false))
+                        return Ok(Object::Troof(false));
                     }
                 }
 
                 Ok(Object::Troof(true))
-            },
+            }
 
             NaryOpKind::Any => {
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
                     let value = self.cast_bool(param.loc().clone(), &object)?;
                     if value {
-                        return Ok(Object::Troof(true))
+                        return Ok(Object::Troof(true));
                     }
                 }
 
                 Ok(Object::Troof(false))
-            },
+            }
 
             NaryOpKind::Smoosh => {
                 let mut output = String::new();
@@ -633,11 +640,15 @@ impl Interpreter {
                 }
 
                 Ok(Object::Yarn(output.into()))
-            },
+            }
         }
     }
 
-    pub fn eval_system_cmd(&mut self, system_cmd: &SystemCmd, scope: &SharedScope) -> Result<Object, Error> {
+    pub fn eval_system_cmd(
+        &mut self,
+        system_cmd: &SystemCmd,
+        scope: &SharedScope,
+    ) -> Result<Object, Error> {
         let object = self.eval_expr(&system_cmd.cmd, scope)?;
         let cmd = self.cast_string(system_cmd.loc.clone(), &object)?;
         let mut args = cmd.split(' ');
@@ -815,7 +826,12 @@ impl Interpreter {
         helper(self, target, value, original_scope, original_scope)
     }
 
-    pub fn escape_string(&mut self, loc: &Loc, input: &str, scope: &SharedScope) -> Result<Arc<str>, Error> {
+    pub fn escape_string(
+        &mut self,
+        loc: &Loc,
+        input: &str,
+        scope: &SharedScope,
+    ) -> Result<Arc<str>, Error> {
         let mut output = String::new();
 
         let mut iter = input.chars();
@@ -828,13 +844,14 @@ impl Interpreter {
                     'o' => 0x07 as char, // bell ansi code
                     '(' => {
                         let Some((content, after)) = iter.as_str().split_once(')') else {
-                            return Err(Error::UnclosedParenLiteral(loc.clone()))
+                            return Err(Error::UnclosedParenLiteral(loc.clone()));
                         };
 
                         iter = after.chars();
 
                         let content = content.trim_start_matches("0x");
-                        let code = u32::from_str_radix(content, 16).map_err(|err| Error::ParseInt(loc.clone(), err))?;
+                        let code = u32::from_str_radix(content, 16)
+                            .map_err(|err| Error::ParseInt(loc.clone(), err))?;
                         let Some(c) = char::from_u32(code) else {
                             return Err(Error::UnknownCharCode(loc.clone(), code));
                         };
@@ -844,16 +861,19 @@ impl Interpreter {
 
                     '{' => {
                         let Some((content, after)) = iter.as_str().split_once('}') else {
-                            return Err(Error::UnclosedBraceLiteral(loc.clone()))
+                            return Err(Error::UnclosedBraceLiteral(loc.clone()));
                         };
 
                         iter = after.chars();
 
-                        let ident = Ident::Lit { name: content.into(), loc: loc.clone() };
+                        let ident = Ident::Lit {
+                            name: content.into(),
+                            loc: loc.clone(),
+                        };
                         let object = self.eval_ident(&ident, scope)?;
                         let text = self.cast_string(loc.clone(), &object)?;
                         output.push_str(&text);
-                        continue
+                        continue;
                     }
 
                     other => other,

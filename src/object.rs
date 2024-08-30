@@ -50,9 +50,13 @@ impl PartialEq for Object {
             (Object::Numbar(x), Object::Numbar(y)) => x == y,
             (Object::Troof(x), Object::Troof(y)) => x == y,
             (Object::Yarn(x), Object::Yarn(y)) => x == y,
-            (Object::Bukkit(x), Object::Bukkit(y)) => std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y)),
-            (Object::Funkshun(x), Object::Funkshun(y)) => std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y)),
-            _ => false
+            (Object::Bukkit(x), Object::Bukkit(y)) => {
+                std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y))
+            }
+            (Object::Funkshun(x), Object::Funkshun(y)) => {
+                std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y))
+            }
+            _ => false,
         }
     }
 }

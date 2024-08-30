@@ -481,7 +481,7 @@ impl<'a> Parser<'a> {
                 loc,
                 scope,
                 name,
-                params: Default::default()
+                params: Default::default(),
             });
         }
 
@@ -908,7 +908,8 @@ mod tests {
                     name: srs(Expr::Ident(ident("var"))),
                     init: init_expr(string_expr("hello:)world:>:o::")),
                 }),
-            ].into(),
+            ]
+            .into(),
         };
         assert_eq!(expected, got)
     }

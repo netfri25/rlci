@@ -62,7 +62,7 @@ impl Scope {
     pub fn assign(&self, name: &str, value: Object) -> Result<(), Error> {
         if let Some(obj) = self.vars.lock().unwrap().get_mut(name) {
             *obj = value;
-            return Ok(())
+            return Ok(());
         }
 
         self.parent
