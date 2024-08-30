@@ -1,5 +1,6 @@
 use std::num::ParseIntError;
 use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
 
 use crate::object::{Bukkit, Funkshun, Object, ObjectType};
@@ -307,9 +308,9 @@ impl Interpreter {
             }) => self.eval_func_call(loc, scope_ident, name, params, scope),
             Expr::UnaryOp(unary_op) => self.eval_unary_op(unary_op, scope),
             Expr::BinaryOp(binary_op) => self.eval_binary_op(binary_op, scope),
-            Expr::NaryOp(_) => todo!(),
-            Expr::Implicit(_) => todo!(),
-            Expr::SystemCmd(_) => todo!(),
+            Expr::NaryOp(n_ary_op) => self.eval_n_ary_op(n_ary_op, scope),
+            Expr::Implicit(Implicit { .. }) => Ok(scope.get_it()),
+            Expr::SystemCmd(system_cmd) => self.eval_system_cmd(system_cmd, scope),
         }
     }
 
@@ -593,38 +594,58 @@ impl Interpreter {
                 Ok(Object::Troof(lhs ^ rhs))
             }
 
-            BinaryOpKind::Eq => Ok(Object::Troof(match (&lhs, &rhs) {
-                (Object::Noob, Object::Noob) => true,
-                (Object::Numbr(x), Object::Numbr(y)) => x == y,
-                (Object::Numbar(x), Object::Numbar(y)) => x == y,
-                (Object::Troof(x), Object::Troof(y)) => x == y,
-                (Object::Yarn(x), Object::Yarn(y)) => x == y,
-                _ => {
-                    return Err(Error::CantApplyBinaryOp {
-                        loc,
-                        kind,
-                        lhs: lhs.typ(),
-                        rhs: rhs.typ(),
-                    })
-                }
-            })),
-
-            BinaryOpKind::NotEq => Ok(Object::Troof(match (&lhs, &rhs) {
-                (Object::Noob, Object::Noob) => false,
-                (Object::Numbr(x), Object::Numbr(y)) => x != y,
-                (Object::Numbar(x), Object::Numbar(y)) => x != y,
-                (Object::Troof(x), Object::Troof(y)) => x != y,
-                (Object::Yarn(x), Object::Yarn(y)) => x != y,
-                _ => {
-                    return Err(Error::CantApplyBinaryOp {
-                        loc,
-                        kind,
-                        lhs: lhs.typ(),
-                        rhs: rhs.typ(),
-                    })
-                }
-            })),
+            BinaryOpKind::Eq => Ok(Object::Troof(lhs == rhs)),
+            BinaryOpKind::NotEq => Ok(Object::Troof(lhs != rhs)),
         }
+    }
+
+    pub fn eval_n_ary_op(&mut self, n_ary_op: &NaryOp, scope: &SharedScope) -> Result<Object, Error> {
+        match n_ary_op.kind {
+            NaryOpKind::All => {
+                for param in n_ary_op.params.iter() {
+                    let object = self.eval_expr(param, scope)?;
+                    let value = self.cast_bool(param.loc().clone(), &object)?;
+                    if !value {
+                        return Ok(Object::Troof(false))
+                    }
+                }
+
+                Ok(Object::Troof(true))
+            },
+
+            NaryOpKind::Any => {
+                for param in n_ary_op.params.iter() {
+                    let object = self.eval_expr(param, scope)?;
+                    let value = self.cast_bool(param.loc().clone(), &object)?;
+                    if value {
+                        return Ok(Object::Troof(true))
+                    }
+                }
+
+                Ok(Object::Troof(false))
+            },
+
+            NaryOpKind::Smoosh => {
+                let mut output = String::new();
+                for param in n_ary_op.params.iter() {
+                    let object = self.eval_expr(param, scope)?;
+                    output += &self.cast_string(param.loc().clone(), &object)?;
+                }
+
+                Ok(Object::Yarn(output.into()))
+            },
+        }
+    }
+
+    pub fn eval_system_cmd(&mut self, system_cmd: &SystemCmd, scope: &SharedScope) -> Result<Object, Error> {
+        let object = self.eval_expr(&system_cmd.cmd, scope)?;
+        let cmd = self.cast_string(system_cmd.loc.clone(), &object)?;
+        let mut args = cmd.split(' ');
+        Command::new(args.next().unwrap_or_default())
+            .args(args)
+            .output()
+            .map(|output| Object::Yarn(String::from_utf8_lossy(&output.stdout).into()))
+            .map_err(|err| Error::Command(system_cmd.loc.clone(), err.into()))
     }
 
     pub fn eval_block(&mut self, block: &Block, scope: &SharedScope) -> Result<(), Error> {
@@ -913,7 +934,10 @@ pub enum Error {
     ParseInt(Loc, ParseIntError),
 
     #[error("{0}: unknown char code `{1:#x}` ({1})")]
-    UnknownCharCode(Loc, u32)
+    UnknownCharCode(Loc, u32),
+
+    #[error("{0}: unable to execute commanad: {1}")]
+    Command(Loc, Arc<std::io::Error>),
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {
