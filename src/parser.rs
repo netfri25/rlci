@@ -476,6 +476,15 @@ impl<'a> Parser<'a> {
     fn parse_func_call_expr(&mut self, scope: Ident) -> Option<FuncCall> {
         let loc = self.expect(TokenKind::Iz)?.loc;
         let name = self.parse_ident()?;
+        if self.peek() == TokenKind::NewLine {
+            return Some(FuncCall {
+                loc,
+                scope,
+                name,
+                params: Default::default(),
+            });
+        }
+
         let kind = self.expect_many(&[TokenKind::Yr, TokenKind::Mkay])?.kind;
         if kind == TokenKind::Mkay {
             return Some(FuncCall {
@@ -492,6 +501,9 @@ impl<'a> Parser<'a> {
         while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
             let expr = self.parse_expr()?;
             params.push(expr);
+            if self.peek() == TokenKind::NewLine {
+                break
+            }
         }
 
         let params = params.into();
@@ -661,10 +673,17 @@ impl<'a> Parser<'a> {
 
         let mut params = Vec::new();
         params.push(self.parse_expr()?);
+        if self.peek() == TokenKind::NewLine {
+            let params = params.into();
+            return Some(NaryOp { loc, kind, params })
+        }
 
         while let TokenKind::An = self.expect_many(&[TokenKind::An, TokenKind::Mkay])?.kind {
             let expr = self.parse_expr()?;
             params.push(expr);
+            if self.peek() == TokenKind::NewLine {
+                break;
+            }
         }
 
         let params = params.into();
