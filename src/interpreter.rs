@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::object::{Bukkit, Funkshun, Object, ObjectType};
 use crate::token::Loc;
-use crate::{ast::*, parser, scope};
+use crate::{ast::*, bindings, parser, scope};
 
 use crate::scope::SharedScope;
 
@@ -23,12 +23,21 @@ impl Interpreter {
         self.eval_source(&input, Loc::new(path), Default::default())
     }
 
-    pub fn eval_source(&mut self, source: &str, loc: Loc, scope: Option<SharedScope>) -> Result<SharedScope, Error> {
+    pub fn eval_source(
+        &mut self,
+        source: &str,
+        loc: Loc,
+        scope: Option<SharedScope>,
+    ) -> Result<SharedScope, Error> {
         let module = parser::parse(source, loc).map_err(Error::Parser)?;
         self.eval_module(module, scope)
     }
 
-    pub fn eval_module(&mut self, module: Module, scope: Option<SharedScope>) -> Result<SharedScope, Error> {
+    pub fn eval_module(
+        &mut self,
+        module: Module,
+        scope: Option<SharedScope>,
+    ) -> Result<SharedScope, Error> {
         let scope = scope.unwrap_or_default();
         for stmt in module.block.iter() {
             self.eval_stmt(stmt, &scope)?
@@ -54,6 +63,7 @@ impl Interpreter {
                 inherit,
                 block,
             }) => self.eval_object_def(loc.clone(), name, inherit.as_ref(), block, scope),
+            Stmt::Import(import) => self.eval_import(import, scope),
             Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it(obj)),
             Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
             Stmt::Return(Return { loc, expr }) => self
@@ -62,7 +72,11 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_cast_stmt(&mut self, CastStmt { loc, who, to }: &CastStmt, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_cast_stmt(
+        &mut self,
+        CastStmt { loc, who, to }: &CastStmt,
+        scope: &SharedScope,
+    ) -> Result<(), Error> {
         let object = self.eval_ident(who, scope)?;
         let result = self.apply_cast(loc, &object, to.typ)?;
         self.assign(who, result, scope)
@@ -114,7 +128,7 @@ impl Interpreter {
                 ObjectType::Numbar => Object::default_numbar(),
                 ObjectType::Yarn => Object::default_yarn(),
                 ObjectType::Bukkit => Object::default_bukkit(scope.clone()),
-                ObjectType::Funkshun => Object::default_funkshun(scope.clone()),
+                ObjectType::Funkshun => Object::default_funkshun(),
             },
             Some(Init::Like { target, loc }) => {
                 let define_scope = &self.eval_scope(&declare.scope, scope)?;
@@ -134,7 +148,7 @@ impl Interpreter {
 
     pub fn eval_cond(&mut self, cond: &Cond, scope: &SharedScope) -> Result<(), Error> {
         let it = scope.get_it();
-        let condition = self.cast_bool(&cond.loc, &it)?;
+        let condition = self.cast_bool(&it);
 
         if condition {
             return self.eval_block(&cond.then, scope);
@@ -142,7 +156,7 @@ impl Interpreter {
 
         for else_if in cond.else_if.iter() {
             let object = self.eval_expr(&else_if.cond, scope)?;
-            let condition = self.cast_bool(&else_if.loc, &object)?;
+            let condition = self.cast_bool(&object);
             if condition {
                 return self.eval_block(&else_if.then, scope);
             }
@@ -179,9 +193,13 @@ impl Interpreter {
 
             Ok(())
         } else {
-            cases
+            let result = cases
                 .flat_map(|case| case.block.iter())
-                .try_for_each(|stmt| self.eval_stmt(stmt, scope))
+                .try_for_each(|stmt| self.eval_stmt(stmt, scope));
+            match result {
+                Ok(()) | Err(Error::Break(_)) => Ok(()),
+                Err(err) => Err(err)
+            }
         }
     }
 
@@ -196,7 +214,7 @@ impl Interpreter {
             let scope = &SharedScope::new(Some(loop_scope.clone()));
             if let Some(ref guard) = looop.guard {
                 let cond = self.eval_expr(guard.cond(), scope)?;
-                let troof = self.cast_bool(guard.cond().loc(), &cond)?;
+                let troof = self.cast_bool(&cond);
                 match guard {
                     LoopGuard::Til { .. } if troof => break,
                     LoopGuard::Wile { .. } if !troof => break,
@@ -255,8 +273,7 @@ impl Interpreter {
 
     pub fn eval_func_def(&mut self, func_def: &FuncDef, scope: &SharedScope) -> Result<(), Error> {
         let scope = &self.eval_scope(&func_def.scope, scope)?;
-        let funkshun = Funkshun {
-            scope: scope.clone(),
+        let funkshun = Funkshun::Normal {
             args: func_def.args.clone(),
             block: func_def.block.clone(),
         };
@@ -303,6 +320,19 @@ impl Interpreter {
         }
 
         self.eval_block(block, &object_scope)
+    }
+
+    pub fn eval_import(&mut self, import: &Import, scope: &SharedScope) -> Result<(), Error> {
+        // TODO: support importing modules from modules, e.g. `CAN HAS MOD'Z SUBMOD?`
+        let name = import.name.to_string();
+        let module = if let Some(lazy_module) = bindings::MODULES.get(name.as_str()) {
+            (**lazy_module).clone()?
+        } else {
+            self.eval_file(&name)?
+        };
+
+        let object = Object::default_bukkit(module);
+        self.define(&import.name, object, scope)
     }
 
     pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
@@ -400,21 +430,28 @@ impl Interpreter {
             return Err(Error::NotCallable(name.clone()));
         };
 
-        if func.args.len() != params.len() {
+        if func.args().len() != params.len() {
             return Err(Error::UnexpectedAmountOfParams {
                 loc: loc.clone(),
-                required: func.args.len(),
+                required: func.args().len(),
                 given: params.len(),
             });
         }
 
-        let scope = SharedScope::new(Some(func.scope.clone()));
-        for (ident, expr) in func.args.iter().zip(params) {
+        let scope = SharedScope::new(Some(scope));
+        for (ident, expr) in func.args().iter().zip(params) {
             let object = self.eval_expr(expr, outer_scope)?;
             self.define(ident, object, &scope)?;
         }
 
-        match self.eval_block(&func.block, &scope) {
+        let result = match func.as_ref() {
+            Funkshun::Normal { block, .. } => self.eval_block(block, &scope),
+            Funkshun::Builtin { loc, callback, .. } => {
+                callback(self, &scope).and_then(|obj| Err(Error::Return(loc.clone(), obj)))
+            }
+        };
+
+        match result {
             Err(Error::Break(..)) => Ok(Object::Noob),
             Err(Error::Return(_, value)) => Ok(value),
             Err(err) => Err(err),
@@ -430,7 +467,7 @@ impl Interpreter {
         let value = self.eval_expr(&unary_op.expr, scope)?;
         match &unary_op.kind {
             UnaryOpKind::Not => {
-                let value = self.cast_bool(&unary_op.loc, &value)?;
+                let value = self.cast_bool(&value);
                 Ok(Object::Troof(!value))
             }
         }
@@ -602,20 +639,20 @@ impl Interpreter {
             }
 
             BinaryOpKind::And => {
-                let lhs = self.cast_bool(loc, &lhs)?;
-                let rhs = self.cast_bool(loc, &rhs)?;
+                let lhs = self.cast_bool(&lhs);
+                let rhs = self.cast_bool(&rhs);
                 Ok(Object::Troof(lhs && rhs))
             }
 
             BinaryOpKind::Or => {
-                let lhs = self.cast_bool(loc, &lhs)?;
-                let rhs = self.cast_bool(loc, &rhs)?;
+                let lhs = self.cast_bool(&lhs);
+                let rhs = self.cast_bool(&rhs);
                 Ok(Object::Troof(lhs || rhs))
             }
 
             BinaryOpKind::Xor => {
-                let lhs = self.cast_bool(loc, &lhs)?;
-                let rhs = self.cast_bool(loc, &rhs)?;
+                let lhs = self.cast_bool(&lhs);
+                let rhs = self.cast_bool(&rhs);
                 Ok(Object::Troof(lhs ^ rhs))
             }
 
@@ -633,7 +670,7 @@ impl Interpreter {
             NaryOpKind::All => {
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
-                    let value = self.cast_bool(param.loc(), &object)?;
+                    let value = self.cast_bool(&object);
                     if !value {
                         return Ok(Object::Troof(false));
                     }
@@ -645,7 +682,7 @@ impl Interpreter {
             NaryOpKind::Any => {
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
-                    let value = self.cast_bool(param.loc(), &object)?;
+                    let value = self.cast_bool(&object);
                     if value {
                         return Ok(Object::Troof(true));
                     }
@@ -695,7 +732,7 @@ impl Interpreter {
     ) -> Result<Object, Error> {
         match typ {
             ObjectType::Noob => Ok(Object::Noob),
-            ObjectType::Troof => self.cast_bool(loc, object).map(Object::Troof),
+            ObjectType::Troof => Ok(Object::Troof(self.cast_bool(object))),
             ObjectType::Numbr => self.cast_int(loc, object).map(Object::Numbr),
             ObjectType::Numbar => self.cast_float(loc, object).map(Object::Numbar),
             ObjectType::Yarn => self
@@ -709,23 +746,16 @@ impl Interpreter {
         }
     }
 
-    pub fn cast_bool(&mut self, loc: &Loc, value: &Object) -> Result<bool, Error> {
-        let res = match value {
+    pub fn cast_bool(&mut self, value: &Object) -> bool {
+        match value {
             Object::Noob => false,
             &Object::Troof(value) => value,
             &Object::Numbr(value) => value != 0,
             &Object::Numbar(value) => value != 0.,
             Object::Yarn(value) => !value.is_empty(),
-            _ => {
-                return Err(Error::CantCast {
-                    loc: loc.clone(),
-                    src: value.typ(),
-                    dst: ObjectType::Troof,
-                })
-            }
-        };
-
-        Ok(res)
+            Object::Bukkit(bukkit) => !bukkit.is_empty(),
+            Object::Funkshun(funkshun) => !funkshun.is_empty(),
+        }
     }
 
     pub fn cast_int(&mut self, loc: &Loc, value: &Object) -> Result<i64, Error> {
@@ -773,7 +803,7 @@ impl Interpreter {
     pub fn cast_string(&mut self, loc: &Loc, value: &Object) -> Result<String, Error> {
         let res = match value {
             Object::Noob => "NOOB".into(),
-            Object::Troof(x) => x.to_string(),
+            Object::Troof(x) => if *x { "WIN".into() } else { "FAIL".into() }
             Object::Numbr(x) => x.to_string(),
             Object::Numbar(x) => x.to_string(),
             Object::Yarn(x) => x.to_string(),
@@ -1031,6 +1061,9 @@ pub enum Error {
 
     #[error("{0}: unable to execute commanad: {1}")]
     Command(Loc, Arc<std::io::Error>),
+
+    #[error("{0}: {1}")]
+    Custom(Loc, String),
 }
 
 fn display_newline<T: ToString>(xs: &[T]) -> String {

@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 
-use crate::object::Object;
+use crate::ast::FuncArg;
+use crate::interpreter;
+use crate::object::{BuiltinFn, Funkshun, Object};
+use crate::token::Loc;
 
 #[derive(Debug, Clone, Default)]
 pub struct SharedScope(Arc<Scope>);
@@ -33,6 +36,34 @@ impl Scope {
         let vars = Default::default();
         let it = Default::default();
         Self { vars, it, parent }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        !self
+            .vars
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|key| key != "ME" && key != "parent")
+    }
+
+    pub fn define_builtin(
+        &self,
+        name: impl Into<String>,
+        loc: Loc,
+        args: impl Into<Arc<[FuncArg]>>,
+        callback: BuiltinFn,
+    ) -> Result<(), interpreter::Error> {
+        let args = args.into();
+        self.define(
+            name.into(),
+            Object::Funkshun(Arc::new(Funkshun::Builtin {
+                loc: loc.clone(),
+                args,
+                callback,
+            })),
+        )
+        .map_err(|err| interpreter::Error::Scope(loc, err))
     }
 
     pub fn define(&self, name: String, value: Object) -> Result<(), Error> {

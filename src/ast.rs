@@ -289,6 +289,13 @@ pub struct ObjectDef {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
+#[display("CAN HAS {name}?")]
+pub struct Import {
+    pub loc: Loc,
+    pub name: Ident,
+}
+
+#[derive(Debug, Display, Clone, PartialEq)]
 pub enum Stmt {
     Cast(CastStmt),
     Print(Print),
@@ -303,6 +310,7 @@ pub enum Stmt {
     FuncDef(FuncDef),
     ObjectDef(ObjectDef),
     Expr(Expr),
+    Import(Import),
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]

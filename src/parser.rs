@@ -103,6 +103,7 @@ impl<'a> Parser<'a> {
             TokenKind::ImInYr => self.parse_loop_stmt().map(Stmt::Loop),
             TokenKind::HowIz => self.parse_func_def_stmt().map(Stmt::FuncDef),
             TokenKind::OHaiIm => self.parse_object_def_stmt().map(Stmt::ObjectDef),
+            TokenKind::CanHas => self.parse_import_stmt().map(Stmt::Import),
 
             _ => {
                 let expr = self.parse_expr().map(Stmt::Expr);
@@ -439,6 +440,13 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_import_stmt(&mut self) -> Option<Import> {
+        let loc = self.expect(TokenKind::CanHas)?.loc;
+        let name = self.parse_ident()?;
+        self.expect(TokenKind::QuestionMark)?;
+        Some(Import { loc, name })
+    }
+
     fn parse_expr(&mut self) -> Option<Expr> {
         let peek = self.peek();
         match peek {
@@ -497,11 +505,13 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         params.push(self.parse_expr()?);
 
-        while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
-            let expr = self.parse_expr()?;
-            params.push(expr);
-            if self.peek() == TokenKind::NewLine {
-                break
+        if self.peek() != TokenKind::NewLine {
+            while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
+                let expr = self.parse_expr()?;
+                params.push(expr);
+                if self.peek() == TokenKind::NewLine {
+                    break
+                }
             }
         }
 

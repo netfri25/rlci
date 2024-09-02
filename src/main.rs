@@ -14,6 +14,7 @@ mod object;
 mod parser;
 mod scope;
 mod token;
+mod bindings;
 
 #[derive(Parser, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[command(version, about, long_about = None)]

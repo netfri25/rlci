@@ -4,7 +4,9 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use crate::ast::{Block, FuncArg};
+use crate::interpreter::{self, Interpreter};
 use crate::scope::SharedScope;
+use crate::token::Loc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Display)]
 pub enum ObjectType {
@@ -99,9 +101,8 @@ impl Object {
         Self::Bukkit(Arc::new(Bukkit::new(parent)))
     }
 
-    pub fn default_funkshun(scope: SharedScope) -> Self {
-        Self::Funkshun(Arc::new(Funkshun {
-            scope,
+    pub fn default_funkshun() -> Self {
+        Self::Funkshun(Arc::new(Funkshun::Normal {
             args: Default::default(),
             block: Default::default(),
         }))
@@ -252,10 +253,34 @@ impl DerefMut for Bukkit {
     }
 }
 
+pub type BuiltinFn = fn(&mut Interpreter, &SharedScope) -> Result<Object, interpreter::Error>;
+
 #[derive(Debug, Clone)]
-pub struct Funkshun {
-    // the scope where the funkshun is defined is the parent scope
-    pub scope: SharedScope,
-    pub args: Arc<[FuncArg]>,
-    pub block: Arc<Block>,
+pub enum Funkshun {
+    Normal {
+        args: Arc<[FuncArg]>,
+        block: Arc<Block>,
+    },
+
+    Builtin {
+        loc: Loc,
+        args: Arc<[FuncArg]>,
+        callback: BuiltinFn,
+    },
+}
+
+impl Funkshun {
+    pub fn args(&self) -> &[FuncArg] {
+        match self {
+            Funkshun::Normal { args, .. } => args,
+            Funkshun::Builtin { args, .. } => args,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Funkshun::Normal { block, .. } => block.is_empty(),
+            _ => false,
+        }
+    }
 }
