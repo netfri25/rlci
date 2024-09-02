@@ -212,7 +212,7 @@ NOT <expression> BTW negation: WIN if x=FAIL
 BTW binary
 BOTH OF   <lhs-expression> [AN] <rhs-expression>     BTW and: WIN iff lhs=WIN,  rhs=WIN
 EITHER OF <lhs-expression> [AN] <rhs-expression>     BTW or: FAIL iff lhs=FAIL, rhs=FAIL
-WON OF    <lhs-expression> [AN} <rhs-expression>     BTW xor: FAIL if lhs=rhs
+WON OF    <lhs-expression> [AN] <rhs-expression>     BTW xor: FAIL if lhs=rhs
 
 BTW n-ary
 ALL OF <expression-1> ([AN] <expression-n>)* MKAY    BTW infinite arity AND
