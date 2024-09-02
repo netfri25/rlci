@@ -1,6 +1,7 @@
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use interpreter::Interpreter;
 use lexer::Lexer;
+use token::Loc;
 
 use std::borrow::Cow;
 use std::fs;
@@ -14,33 +15,26 @@ mod parser;
 mod scope;
 mod token;
 
-#[derive(Parser)]
+#[derive(Parser, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[command(version, about, long_about = None)]
-pub struct Options {
-    #[arg(value_enum)]
-    action: Action,
-    #[arg()]
-    path: PathBuf,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-pub enum Action {
-    Lex,
-    Parse,
-    Run,
+pub enum Args {
+    Lex { path: PathBuf },
+    Parse { path: PathBuf } ,
+    Run { path: PathBuf },
+    Repl,
 }
 
 fn main() {
-    let ops = Options::parse();
-    let path = expand_home(&ops.path);
+    let args = Args::parse();
 
-    match ops.action {
-        Action::Lex => lex(&path),
-        Action::Parse => parse(&path),
-        Action::Run => Interpreter::default()
-            .eval_file(&path)
+    match args {
+        Args::Lex { path } => lex(&expand_home(&path)),
+        Args::Parse { path } => parse(&expand_home(&path)),
+        Args::Run { path } => Interpreter::default()
+            .eval_file(&expand_home(&path))
             .map(drop)
             .unwrap_or_else(|err| eprintln!("[ERROR] {}", err)),
+        Args::Repl => todo!("REPL"),
     }
 }
 
@@ -61,7 +55,7 @@ fn lex(path: &Path) {
 
 fn parse(path: &Path) {
     let input = read_file(path);
-    let module = parser::parse(&input, path).unwrap_or_else(|errs| {
+    let module = parser::parse(&input, Loc::new(path)).unwrap_or_else(|errs| {
         for err in errs {
             eprintln!("[ERROR] {}", err)
         }

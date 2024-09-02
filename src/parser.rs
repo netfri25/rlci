@@ -1,5 +1,4 @@
 use std::num::{ParseFloatError, ParseIntError};
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::ast::*;
@@ -7,8 +6,8 @@ use crate::lexer::Lexer;
 use crate::object::ObjectType;
 use crate::token::{Loc, Token, TokenKind};
 
-pub fn parse(input: &str, path: &(impl AsRef<Path> + ?Sized)) -> Result<Module, Vec<Error>> {
-    let lexer = Lexer::new(input, path);
+pub fn parse(input: &str, loc: Loc) -> Result<Module, Vec<Error>> {
+    let lexer = Lexer::new_with_loc(input, loc);
     let mut parser = Parser::new(lexer);
     let module = parser.parse_module();
     module.ok_or_else(|| parser.consume_errors())

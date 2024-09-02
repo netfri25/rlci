@@ -20,12 +20,16 @@ impl Interpreter {
             reason: err.kind(),
         })?;
 
-        let module = parser::parse(&input, path).map_err(Error::Parser)?;
-        self.eval_module(module)
+        self.eval_source(&input, Loc::new(path), Default::default())
     }
 
-    pub fn eval_module(&mut self, module: Module) -> Result<SharedScope, Error> {
-        let scope = SharedScope::default();
+    pub fn eval_source(&mut self, source: &str, loc: Loc, scope: Option<SharedScope>) -> Result<SharedScope, Error> {
+        let module = parser::parse(source, loc).map_err(Error::Parser)?;
+        self.eval_module(module, scope)
+    }
+
+    pub fn eval_module(&mut self, module: Module, scope: Option<SharedScope>) -> Result<SharedScope, Error> {
+        let scope = scope.unwrap_or_default();
         for stmt in module.block.iter() {
             self.eval_stmt(stmt, &scope)?
         }

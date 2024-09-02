@@ -12,7 +12,10 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str, path: &(impl AsRef<Path> + ?Sized)) -> Self {
-        let loc = Loc::new(path);
+        Self::new_with_loc(input, Loc::new(path))
+    }
+
+    pub fn new_with_loc(input: &'a str, loc: Loc) -> Self {
         Self {
             input,
             loc,
