@@ -191,13 +191,13 @@ SMOOSH ALL OF WIN WIN AN FAIL MKAY AN 123456 AN "YAH" MKAY
 the basic math operators are binary prefix operators.
 
 ```lolcode
-SUM OF      <lhs-expression> AN <rhsexpression> BTW +
-DIFF OF     <lhs-expression> AN <rhsexpression> BTW -
-PRODUKT OF  <lhs-expression> AN <rhsexpression> BTW *
-QUOSHUNT OF <lhs-expression> AN <rhsexpression> BTW /
-MOD OF      <lhs-expression> AN <rhsexpression> BTW modulo
-BIGGR OF    <lhs-expression> AN <rhsexpression> BTW max
-SMALLR OF   <lhs-expression> AN <rhsexpression> BTW min
+SUM OF      <lhs-expression> AN <rhs-expression> BTW +
+DIFF OF     <lhs-expression> AN <rhs-expression> BTW -
+PRODUKT OF  <lhs-expression> AN <rhs-expression> BTW *
+QUOSHUNT OF <lhs-expression> AN <rhs-expression> BTW /
+MOD OF      <lhs-expression> AN <rhs-expression> BTW modulo
+BIGGR OF    <lhs-expression> AN <rhs-expression> BTW max
+SMALLR OF   <lhs-expression> AN <rhs-expression> BTW min
 ```
 
 Math is performed as integer math in the presence of two NUMBRs, but if either of the expressions are NUMBARs, then floating point math takes over.
@@ -237,10 +237,10 @@ If an expression in the above formulations is too verbose or difficult to comput
 Common comparison expressions that might help:
 
 ```lolcode
-BOTH SAEM x AN BIGGR OF x AY y    BTW x >= y
-DIFFRINT  x AN BIGGR OF x AY y    BTW x < y
-BOTH SAEM x AN SMALLR OF x AY y   BTW x <= y
-DIFFRINT  x AN SMALLR OF x AY y   BTW x > y
+BOTH SAEM x AN BIGGR OF x AN y    BTW x >= y
+DIFFRINT  x AN BIGGR OF x AN y    BTW x < y
+BOTH SAEM x AN SMALLR OF x AN y   BTW x <= y
+DIFFRINT  x AN SMALLR OF x AN y   BTW x > y
 ```
 
 ### Concatenation
