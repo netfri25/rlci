@@ -672,17 +672,16 @@ impl<'a> Parser<'a> {
 
         let mut params = Vec::new();
         params.push(self.parse_expr()?);
-        if self.peek() == TokenKind::NewLine {
-            let params = params.into();
-            return Some(NaryOp { loc, kind, params })
-        }
 
-        while let TokenKind::An = self.expect_many(&[TokenKind::An, TokenKind::Mkay])?.kind {
+        let ends = [TokenKind::Mkay, TokenKind::NewLine];
+        while !ends.contains(&self.peek()) {
+            self.accept(TokenKind::An);
             let expr = self.parse_expr()?;
             params.push(expr);
-            if self.peek() == TokenKind::NewLine {
-                break;
-            }
+        }
+
+        if self.peek() != TokenKind::NewLine {
+            self.expect(TokenKind::Mkay)?;
         }
 
         let params = params.into();
