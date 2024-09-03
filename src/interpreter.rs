@@ -1,3 +1,4 @@
+use std::clone;
 use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
 use std::process::Command;
@@ -597,44 +598,52 @@ impl Interpreter {
             }
 
             BinaryOpKind::Max => {
-                if !is_lhs_num || !is_rhs_num {
-                    return Err(Error::CantApplyBinaryOp {
-                        loc: loc.clone(),
-                        kind,
-                        lhs: lhs.typ(),
-                        rhs: rhs.typ(),
-                    });
-                }
-
-                if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc, &lhs)?;
-                    let rhs = self.cast_float(loc, &rhs)?;
-                    Ok(Object::Numbar(lhs.max(rhs)))
+                if let (Object::Yarn(lhs), Object::Yarn(rhs)) = (&lhs, &rhs) {
+                    Ok(Object::Yarn(lhs.clone().max(rhs.clone())))
                 } else {
-                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::Numbr(lhs.max(rhs)))
+                    if !is_lhs_num || !is_rhs_num {
+                        return Err(Error::CantApplyBinaryOp {
+                            loc: loc.clone(),
+                            kind,
+                            lhs: lhs.typ(),
+                            rhs: rhs.typ(),
+                        });
+                    }
+
+                    if is_lhs_float || is_rhs_float {
+                        let lhs = self.cast_float(loc, &lhs)?;
+                        let rhs = self.cast_float(loc, &rhs)?;
+                        Ok(Object::Numbar(lhs.max(rhs)))
+                    } else {
+                        let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                        let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                        Ok(Object::Numbr(lhs.max(rhs)))
+                    }
                 }
             }
 
             BinaryOpKind::Min => {
-                if !is_lhs_num || !is_rhs_num {
-                    return Err(Error::CantApplyBinaryOp {
-                        loc: loc.clone(),
-                        kind,
-                        lhs: lhs.typ(),
-                        rhs: rhs.typ(),
-                    });
-                }
-
-                if is_lhs_float || is_rhs_float {
-                    let lhs = self.cast_float(loc, &lhs)?;
-                    let rhs = self.cast_float(loc, &rhs)?;
-                    Ok(Object::Numbar(lhs.min(rhs)))
+                if let (Object::Yarn(lhs), Object::Yarn(rhs)) = (&lhs, &rhs) {
+                    Ok(Object::Yarn(lhs.clone().min(rhs.clone())))
                 } else {
-                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
-                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
-                    Ok(Object::Numbr(lhs.min(rhs)))
+                    if !is_lhs_num || !is_rhs_num {
+                        return Err(Error::CantApplyBinaryOp {
+                            loc: loc.clone(),
+                            kind,
+                            lhs: lhs.typ(),
+                            rhs: rhs.typ(),
+                        });
+                    }
+
+                    if is_lhs_float || is_rhs_float {
+                        let lhs = self.cast_float(loc, &lhs)?;
+                        let rhs = self.cast_float(loc, &rhs)?;
+                        Ok(Object::Numbar(lhs.min(rhs)))
+                    } else {
+                        let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                        let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                        Ok(Object::Numbr(lhs.min(rhs)))
+                    }
                 }
             }
 
