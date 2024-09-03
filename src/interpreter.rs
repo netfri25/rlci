@@ -1,4 +1,3 @@
-use std::clone;
 use std::num::{ParseFloatError, ParseIntError};
 use std::path::Path;
 use std::process::Command;
@@ -41,7 +40,10 @@ impl Interpreter {
     ) -> Result<SharedScope, Error> {
         let scope = scope.unwrap_or_default();
         for stmt in module.block.iter() {
-            self.eval_stmt(stmt, &scope)?
+            if let Err(err) = self.eval_stmt(stmt, &scope) {
+                dbg!(scope);
+                return Err(err);
+            }
         }
 
         Ok(scope)
@@ -63,7 +65,7 @@ impl Interpreter {
                 name,
                 inherit,
                 block,
-            }) => self.eval_object_def(loc.clone(), name, inherit.as_ref(), block, scope),
+            }) => self.eval_object_def(loc.clone(), name, inherit.as_ref(), block, scope, scope),
             Stmt::Import(import) => self.eval_import(import, scope),
             Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it(obj)),
             Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
@@ -139,12 +141,13 @@ impl Interpreter {
                     Some(target),
                     &[],
                     define_scope,
+                    scope,
                 );
             }
         };
 
         let define_scope = &self.eval_scope(&declare.scope, scope)?;
-        self.define(&declare.name, object, define_scope)
+        self.define(&declare.name, object, define_scope, scope)
     }
 
     pub fn eval_cond(&mut self, cond: &Cond, scope: &SharedScope) -> Result<(), Error> {
@@ -207,8 +210,9 @@ impl Interpreter {
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
         let loop_scope = &SharedScope::new(Some(scope.clone()));
         if let Some(var) = looop.var() {
+            // TODO: don't define the variable if it already exists in a parent scope
             let value = Object::default_numbr();
-            self.define(var, value, loop_scope)?;
+            self.define(var, value, loop_scope, scope)?;
         };
 
         loop {
@@ -273,13 +277,13 @@ impl Interpreter {
     }
 
     pub fn eval_func_def(&mut self, func_def: &FuncDef, scope: &SharedScope) -> Result<(), Error> {
-        let scope = &self.eval_scope(&func_def.scope, scope)?;
+        let define_scope = &self.eval_scope(&func_def.scope, scope)?;
         let funkshun = Funkshun::Normal {
             args: func_def.args.clone(),
             block: func_def.block.clone(),
         };
         let object = Object::Funkshun(Arc::new(funkshun));
-        self.define(&func_def.name, object, scope)
+        self.define(&func_def.name, object, define_scope, scope)
     }
 
     pub fn eval_object_def(
@@ -288,6 +292,7 @@ impl Interpreter {
         name: &Ident,
         inherit: Option<&Ident>,
         block: &Block,
+        define_scope: &SharedScope,
         scope: &SharedScope,
     ) -> Result<(), Error> {
         let parent = if let Some(inherit) = inherit {
@@ -299,7 +304,7 @@ impl Interpreter {
         let bukkit = Bukkit::new(parent.clone());
         let object_scope = bukkit.scope().clone();
         let object = Object::Bukkit(Arc::new(bukkit));
-        self.define(name, object.clone(), scope)?;
+        self.define(name, object.clone(), define_scope, scope)?;
         self.define(
             &Ident::Lit {
                 name: "ME".into(),
@@ -307,6 +312,7 @@ impl Interpreter {
             },
             object.clone(),
             &object_scope,
+            scope
         )?;
 
         if let Some(inherit) = inherit {
@@ -317,6 +323,7 @@ impl Interpreter {
                 },
                 Object::Bukkit(Arc::new(Bukkit::from_scope(parent))),
                 &object_scope,
+                scope
             )?;
         }
 
@@ -329,11 +336,12 @@ impl Interpreter {
         let module = if let Some(lazy_module) = bindings::MODULES.get(name.as_str()) {
             (**lazy_module).clone()?
         } else {
-            self.eval_file(&name)?
+            let file_path = name.to_lowercase() + ".lol";
+            self.eval_file(&file_path)?
         };
 
         let object = Object::default_bukkit(module);
-        self.define(&import.name, object, scope)
+        self.define(&import.name, object, scope, scope)
     }
 
     pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
@@ -442,7 +450,7 @@ impl Interpreter {
         let scope = SharedScope::new(Some(scope));
         for (ident, expr) in func.args().iter().zip(params) {
             let object = self.eval_expr(expr, outer_scope)?;
-            self.define(ident, object, &scope)?;
+            self.define(ident, object, &scope, &scope)?;
         }
 
         let result = match func.as_ref() {
@@ -866,36 +874,27 @@ impl Interpreter {
         &mut self,
         target: &Ident,
         value: Object,
-        original_scope: &SharedScope,
+        define_scope: &SharedScope,
+        scope: &SharedScope,
     ) -> Result<(), Error> {
-        fn helper(
-            me: &mut Interpreter,
-            target: &Ident,
-            value: Object,
-            scope: &SharedScope,
-            original_scope: &SharedScope,
-        ) -> Result<(), Error> {
-            match target {
-                Ident::Lit { name, loc } => scope
-                    .define(name.to_string(), value)
-                    .map_err(|err| Error::Scope(loc.clone(), err)),
+        match target {
+            Ident::Lit { name, loc } => define_scope
+                .define(name.to_string(), value)
+                .map_err(|err| Error::Scope(loc.clone(), err)),
 
-                Ident::Srs { expr, loc } => {
-                    let object = me.eval_expr(expr, original_scope)?;
-                    let name = me.cast_string(loc, &object)?;
-                    scope
-                        .define(name, value)
-                        .map_err(|err| Error::Scope(loc.clone(), err))
-                }
+            Ident::Srs { expr, loc } => {
+                let object = self.eval_expr(expr, scope)?;
+                let name = self.cast_string(loc, &object)?;
+                define_scope
+                    .define(name, value)
+                    .map_err(|err| Error::Scope(loc.clone(), err))
+            }
 
-                Ident::Access { parent, slot, .. } => {
-                    let parent_scope = me.eval_scope(parent, scope)?;
-                    helper(me, slot, value, &parent_scope, original_scope)
-                }
+            Ident::Access { parent, slot, .. } => {
+                let parent_scope = self.eval_scope(parent, define_scope)?;
+                self.define(slot, value, &parent_scope, scope)
             }
         }
-
-        helper(self, target, value, original_scope, original_scope)
     }
 
     // NOTE: assign / define

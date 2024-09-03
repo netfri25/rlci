@@ -54,18 +54,7 @@ pub static STRING: LazyLock<Result<SharedScope, Error>> = LazyLock::new(|| {
 
             let index = index as usize;
 
-            text.get(index..index + 1)
-                .map(|slice| Object::Yarn(slice.into()))
-                .ok_or_else(|| {
-                    Error::Custom(
-                        loc_here!(),
-                        format!(
-                            "index out of bounds (index: {}, length: {})",
-                            index,
-                            text.len()
-                        ),
-                    )
-                })
+            Ok(Object::Yarn(text.get(index..index + 1).unwrap_or_default().into()))
         },
     )?;
 
@@ -130,19 +119,7 @@ pub static STRING: LazyLock<Result<SharedScope, Error>> = LazyLock::new(|| {
             }
             let to = to as usize;
 
-            text.get(from..to)
-                .map(|slice| Object::Yarn(slice.into()))
-                .ok_or_else(|| {
-                    Error::Custom(
-                        loc_here!(),
-                        format!(
-                            "slice out of bounds (from: {}, to: {}, length: {})",
-                            from,
-                            to,
-                            text.len()
-                        ),
-                    )
-                })
+            Ok(Object::Yarn(text.get(from..to).unwrap_or_default().into()))
         }
     )?;
     Ok(scope)

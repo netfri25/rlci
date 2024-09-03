@@ -141,6 +141,7 @@ impl<'a> Lexer<'a> {
             ("EITHER OF", EitherOf),
             ("FAIL", Fail),
             ("FOUND YR", FoundYr),
+            ("FUNKSHUN", Funkshun),
             ("GIMMEH", Gimmeh),
             ("GTFO", Gtfo),
             ("HAI", Hai),

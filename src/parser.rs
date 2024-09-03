@@ -633,6 +633,7 @@ impl<'a> Parser<'a> {
             Not => UnaryOpKind::Not,
             _ => return None,
         };
+        self.next_token();
 
         let expr = self.parse_expr().map(Arc::new)?;
         Some(UnaryOp { loc, kind, expr })
