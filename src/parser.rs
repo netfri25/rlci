@@ -1,5 +1,4 @@
 use std::num::{ParseFloatError, ParseIntError};
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::ast::*;
@@ -7,8 +6,8 @@ use crate::lexer::Lexer;
 use crate::object::ObjectType;
 use crate::token::{Loc, Token, TokenKind};
 
-pub fn parse(input: &str, path: &(impl AsRef<Path> + ?Sized)) -> Result<Module, Vec<Error>> {
-    let lexer = Lexer::new(input, path);
+pub fn parse(input: &str, loc: Loc) -> Result<Module, Vec<Error>> {
+    let lexer = Lexer::new_with_loc(input, loc);
     let mut parser = Parser::new(lexer);
     let module = parser.parse_module();
     module.ok_or_else(|| parser.consume_errors())
@@ -104,6 +103,7 @@ impl<'a> Parser<'a> {
             TokenKind::ImInYr => self.parse_loop_stmt().map(Stmt::Loop),
             TokenKind::HowIz => self.parse_func_def_stmt().map(Stmt::FuncDef),
             TokenKind::OHaiIm => self.parse_object_def_stmt().map(Stmt::ObjectDef),
+            TokenKind::CanHas => self.parse_import_stmt().map(Stmt::Import),
 
             _ => {
                 let expr = self.parse_expr().map(Stmt::Expr);
@@ -440,6 +440,13 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_import_stmt(&mut self) -> Option<Import> {
+        let loc = self.expect(TokenKind::CanHas)?.loc;
+        let name = self.parse_ident()?;
+        self.expect(TokenKind::QuestionMark)?;
+        Some(Import { loc, name })
+    }
+
     fn parse_expr(&mut self) -> Option<Expr> {
         let peek = self.peek();
         match peek {
@@ -476,6 +483,15 @@ impl<'a> Parser<'a> {
     fn parse_func_call_expr(&mut self, scope: Ident) -> Option<FuncCall> {
         let loc = self.expect(TokenKind::Iz)?.loc;
         let name = self.parse_ident()?;
+        if self.peek() == TokenKind::NewLine {
+            return Some(FuncCall {
+                loc,
+                scope,
+                name,
+                params: Default::default(),
+            });
+        }
+
         let kind = self.expect_many(&[TokenKind::Yr, TokenKind::Mkay])?.kind;
         if kind == TokenKind::Mkay {
             return Some(FuncCall {
@@ -489,9 +505,14 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         params.push(self.parse_expr()?);
 
-        while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
-            let expr = self.parse_expr()?;
-            params.push(expr);
+        if self.peek() != TokenKind::NewLine {
+            while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
+                let expr = self.parse_expr()?;
+                params.push(expr);
+                if self.peek() == TokenKind::NewLine {
+                    break
+                }
+            }
         }
 
         let params = params.into();
@@ -612,6 +633,7 @@ impl<'a> Parser<'a> {
             Not => UnaryOpKind::Not,
             _ => return None,
         };
+        self.next_token();
 
         let expr = self.parse_expr().map(Arc::new)?;
         Some(UnaryOp { loc, kind, expr })
@@ -662,9 +684,15 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         params.push(self.parse_expr()?);
 
-        while let TokenKind::An = self.expect_many(&[TokenKind::An, TokenKind::Mkay])?.kind {
+        let ends = [TokenKind::Mkay, TokenKind::NewLine];
+        while !ends.contains(&self.peek()) {
+            self.accept(TokenKind::An);
             let expr = self.parse_expr()?;
             params.push(expr);
+        }
+
+        if self.peek() != TokenKind::NewLine {
+            self.expect(TokenKind::Mkay)?;
         }
 
         let params = params.into();

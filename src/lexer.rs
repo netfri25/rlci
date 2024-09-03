@@ -12,7 +12,10 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str, path: &(impl AsRef<Path> + ?Sized)) -> Self {
-        let loc = Loc::new(path);
+        Self::new_with_loc(input, Loc::new(path))
+    }
+
+    pub fn new_with_loc(input: &'a str, loc: Loc) -> Self {
         Self {
             input,
             loc,
@@ -121,6 +124,7 @@ impl<'a> Lexer<'a> {
     fn lex_keyword(&self) -> Option<Token<'a>> {
         use TokenKind::*;
         let keywords = BTreeMap::from([
+            ("?", QuestionMark),
             ("A", A),
             ("ALL OF", AllOf),
             ("AN", An),
@@ -137,6 +141,7 @@ impl<'a> Lexer<'a> {
             ("EITHER OF", EitherOf),
             ("FAIL", Fail),
             ("FOUND YR", FoundYr),
+            ("FUNKSHUN", Funkshun),
             ("GIMMEH", Gimmeh),
             ("GTFO", Gtfo),
             ("HAI", Hai),
@@ -193,8 +198,14 @@ impl<'a> Lexer<'a> {
         ]);
 
         keywords.iter().rev().find_map(|(keyword, kind)| {
-            self.starts_with(keyword)
-                .then(|| self.new_token(keyword.len(), *kind))
+            let is_good = self.starts_with(keyword)
+                && self
+                    .input
+                    .chars()
+                    .nth(keyword.len())
+                    .filter(|&c| c.is_ascii_alphanumeric() || c == '_')
+                    .is_none();
+            is_good.then(|| self.new_token(keyword.len(), *kind))
         })
     }
 

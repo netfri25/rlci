@@ -85,6 +85,7 @@ pub enum TokenKind {
     A,      // cast target specifior
     IsNowA, // in-place cast
     ApostZ, // slot access
+    QuestionMark, // ?
 
     Visible,   // print to stdout
     Invisible, // print to stderr
@@ -263,6 +264,7 @@ impl TokenKind {
             TokenKind::KThx => "KTHX",
             TokenKind::IDuz => "I DUZ",
             TokenKind::CanHas => "CAN HAS",
+            TokenKind::QuestionMark => "?",
         }
     }
 }
@@ -275,7 +277,19 @@ pub struct Loc {
     col: u32,
 }
 
+#[macro_export]
+macro_rules! loc_here {
+    () => {
+        $crate::token::Loc::new_full(file!(), line!(), column!())
+    };
+}
+
 impl Loc {
+    pub fn new_full(path: &(impl AsRef<Path> + ?Sized), row: u32, col: u32) -> Self {
+        let path = path.as_ref().into();
+        Self { path, row, col }
+    }
+
     pub fn new(path: &(impl AsRef<Path> + ?Sized)) -> Self {
         let path = path.as_ref().into();
         Self {
