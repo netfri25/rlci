@@ -568,6 +568,7 @@ impl<'a> Parser<'a> {
             TokenKind::Yarn => Type { loc, typ: ObjectType::Yarn },
             TokenKind::Bukkit => Type { loc, typ: ObjectType::Bukkit },
             TokenKind::Funkshun => Type { loc, typ: ObjectType::Funkshun },
+            TokenKind::Blob => Type { loc, typ: ObjectType::Blob },
             _ => unreachable!(),
         };
 

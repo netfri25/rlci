@@ -44,6 +44,7 @@ pub enum TokenKind {
     Yarn,     // string type
     Bukkit,   // object type
     Funkshun, // function type
+    Blob,     // raw data type, usually a built-in type
 
     // specials
     NewLine, // suggested by Nitay to be called `NewLine` instead of `Newline`
@@ -81,10 +82,10 @@ pub enum TokenKind {
     BothSaem, // ==
     Diffrint, // !=
 
-    Maek,   // cast
-    A,      // cast target specifior
-    IsNowA, // in-place cast
-    ApostZ, // slot access
+    Maek,         // cast
+    A,            // cast target specifior
+    IsNowA,       // in-place cast
+    ApostZ,       // slot access
     QuestionMark, // ?
 
     Visible,   // print to stdout
@@ -131,6 +132,7 @@ impl TokenKind {
         Self::Yarn,
         Self::Bukkit,
         Self::Funkshun,
+        Self::Blob,
     ];
 
     pub const BLOCK_TERM: &'static [Self] = &[
@@ -265,6 +267,7 @@ impl TokenKind {
             TokenKind::IDuz => "I DUZ",
             TokenKind::CanHas => "CAN HAS",
             TokenKind::QuestionMark => "?",
+            TokenKind::Blob => "BLOB",
         }
     }
 }

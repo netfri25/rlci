@@ -131,6 +131,7 @@ impl<'a> Lexer<'a> {
             ("ANY OF", AnyOf),
             ("AN YR", AnYr),
             ("BIGGR OF", BiggrOf),
+            ("BLOB", Blob),
             ("BOTH OF", BothOf),
             ("BOTH SAEM", BothSaem),
             ("BUKKIT", Bukkit),

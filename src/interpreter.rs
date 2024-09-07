@@ -132,6 +132,7 @@ impl Interpreter {
                 ObjectType::Yarn => Object::default_yarn(),
                 ObjectType::Bukkit => Object::default_bukkit(scope.clone()),
                 ObjectType::Funkshun => Object::default_funkshun(),
+                ObjectType::Blob => Object::Blob(Arc::new(()))
             },
             Some(Init::Like { target, loc }) => {
                 let define_scope = &self.eval_scope(&declare.scope, scope)?;
@@ -777,6 +778,7 @@ impl Interpreter {
             Object::Yarn(value) => !value.is_empty(),
             Object::Bukkit(bukkit) => !bukkit.is_empty(),
             Object::Funkshun(funkshun) => !funkshun.is_empty(),
+            Object::Blob(blob) => !blob.is::<()>(),
         }
     }
 

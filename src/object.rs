@@ -2,6 +2,7 @@ use derive_more::Display;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::any::Any;
 
 use crate::ast::{Block, FuncArg};
 use crate::interpreter::{self, Interpreter};
@@ -30,6 +31,9 @@ pub enum ObjectType {
 
     #[display("FUNKSHUN")]
     Funkshun,
+
+    #[display("BLOB")]
+    Blob,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -42,6 +46,7 @@ pub enum Object {
     Yarn(Arc<str>),
     Bukkit(Arc<Bukkit>),
     Funkshun(Arc<Funkshun>),
+    Blob(Arc<dyn Any + Send + Sync>),
 }
 
 impl PartialEq for Object {
@@ -74,6 +79,7 @@ impl Object {
             Self::Yarn(..) => ObjectType::Yarn,
             Self::Bukkit(..) => ObjectType::Bukkit,
             Self::Funkshun(_) => ObjectType::Funkshun,
+            Self::Blob(_) => ObjectType::Blob,
         }
     }
 
@@ -155,6 +161,14 @@ impl Object {
     pub fn as_funkshun(&self) -> Option<&Funkshun> {
         if let Self::Funkshun(v) = self {
             Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_blob<T: Any>(&self) -> Option<&T> {
+        if let Self::Blob(v) = self {
+            v.downcast_ref()
         } else {
             None
         }
