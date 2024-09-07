@@ -209,10 +209,15 @@ impl Interpreter {
 
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
         let loop_scope = &SharedScope::new(Some(scope.clone()));
-        if let Some(var) = looop.var() {
-            // TODO: don't define the variable if it already exists in a parent scope
-            let value = Object::default_numbr();
-            self.define(var, value, loop_scope, scope)?;
+        if let Some(var@Ident::Lit { .. }) = looop.var() {
+            match self.eval_ident(var, scope) {
+                Ok(_) => {},
+                Err(Error::Scope(_, scope::Error::DoesNotExist(_))) => {
+                    let value = Object::default_numbr();
+                    self.define(var, value, loop_scope, scope)?;
+                },
+                Err(err) => return Err(err),
+            }
         };
 
         loop {
