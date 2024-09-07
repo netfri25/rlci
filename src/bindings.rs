@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::fs::File;
+use std::io::Read;
+use std::sync::{Arc, LazyLock};
 
 use crate::interpreter::Error;
 use crate::loc_here;
@@ -15,14 +17,17 @@ macro_rules! lit {
     };
 }
 
+pub type Module = LazyLock<Result<SharedScope, Error>>;
+
 pub static MODULES: LazyLock<HashMap<&'static str, &'static LazyLock<Result<SharedScope, Error>>>> =
     LazyLock::new(|| {
         let mut map = HashMap::new();
         map.insert("STRING", &STRING);
+        map.insert("FILE", &FILE);
         map
     });
 
-pub static STRING: LazyLock<Result<SharedScope, Error>> = LazyLock::new(|| {
+pub static STRING: Module = LazyLock::new(|| {
     let scope = SharedScope::new(None);
     scope.define_builtin(
         "AT",
@@ -120,7 +125,46 @@ pub static STRING: LazyLock<Result<SharedScope, Error>> = LazyLock::new(|| {
             let to = to as usize;
 
             Ok(Object::Yarn(text.get(from..to).unwrap_or_default().into()))
-        }
+        },
     )?;
+    Ok(scope)
+});
+
+pub static FILE: Module = LazyLock::new(|| {
+    let scope = SharedScope::new(None);
+
+    scope.define_builtin("OPEN", loc_here!(), [lit!("path")], |me, scope| {
+        let path = me.eval_ident(&lit!("path"), scope)?;
+        let Some(path) = path.as_yarn() else {
+            return Err(Error::Custom(
+                loc_here!(),
+                format!("expected `path` to be a YARN, but got {}", path.typ()),
+            ));
+        };
+
+        let file = match File::open(path) {
+            Ok(file) => file,
+            Err(_) => return Ok(Object::Noob),
+        };
+
+        Ok(Object::Blob(Arc::new(file)))
+    })?;
+
+    scope.define_builtin("GETZ", loc_here!(), [lit!("file")], |me, scope| {
+        let file = me.eval_ident(&lit!("file"), scope)?;
+        let Some(mut file) = file.as_blob::<File>() else {
+            return Err(Error::Custom(
+                loc_here!(),
+                format!("expected `file` to be a File, but got {}", file.typ()),
+            ));
+        };
+
+        let mut buf = String::new();
+        file.read_to_string(&mut buf)
+            .map_err(|err| Error::Custom(loc_here!(), err.to_string()))?;
+
+        Ok(Object::Yarn(buf.into()))
+    })?;
+
     Ok(scope)
 });
