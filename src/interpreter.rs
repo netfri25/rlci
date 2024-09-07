@@ -40,10 +40,7 @@ impl Interpreter {
     ) -> Result<SharedScope, Error> {
         let scope = scope.unwrap_or_default();
         for stmt in module.block.iter() {
-            if let Err(err) = self.eval_stmt(stmt, &scope) {
-                dbg!(scope);
-                return Err(err);
-            }
+            self.eval_stmt(stmt, &scope)?
         }
 
         Ok(scope)
@@ -132,7 +129,7 @@ impl Interpreter {
                 ObjectType::Yarn => Object::default_yarn(),
                 ObjectType::Bukkit => Object::default_bukkit(scope.clone()),
                 ObjectType::Funkshun => Object::default_funkshun(),
-                ObjectType::Blob => Object::Blob(Arc::new(()))
+                ObjectType::Blob => Object::Blob(Arc::new(())),
             },
             Some(Init::Like { target, loc }) => {
                 let define_scope = &self.eval_scope(&declare.scope, scope)?;
@@ -203,20 +200,20 @@ impl Interpreter {
                 .try_for_each(|stmt| self.eval_stmt(stmt, scope));
             match result {
                 Ok(()) | Err(Error::Break(_)) => Ok(()),
-                Err(err) => Err(err)
+                Err(err) => Err(err),
             }
         }
     }
 
     pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
         let loop_scope = &SharedScope::new(Some(scope.clone()));
-        if let Some(var@Ident::Lit { .. }) = looop.var() {
+        if let Some(var @ Ident::Lit { .. }) = looop.var() {
             match self.eval_ident(var, scope) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(Error::Scope(_, scope::Error::DoesNotExist(_))) => {
                     let value = Object::default_numbr();
                     self.define(var, value, loop_scope, scope)?;
-                },
+                }
                 Err(err) => return Err(err),
             }
         };
@@ -318,7 +315,7 @@ impl Interpreter {
             },
             object.clone(),
             &object_scope,
-            scope
+            scope,
         )?;
 
         if let Some(inherit) = inherit {
@@ -329,7 +326,7 @@ impl Interpreter {
                 },
                 Object::Bukkit(Arc::new(Bukkit::from_scope(parent))),
                 &object_scope,
-                scope
+                scope,
             )?;
         }
 
@@ -827,7 +824,13 @@ impl Interpreter {
     pub fn cast_string(&mut self, loc: &Loc, value: &Object) -> Result<String, Error> {
         let res = match value {
             Object::Noob => "NOOB".into(),
-            Object::Troof(x) => if *x { "WIN".into() } else { "FAIL".into() }
+            Object::Troof(x) => {
+                if *x {
+                    "WIN".into()
+                } else {
+                    "FAIL".into()
+                }
+            }
             Object::Numbr(x) => x.to_string(),
             Object::Numbar(x) => x.to_string(),
             Object::Yarn(x) => x.to_string(),
