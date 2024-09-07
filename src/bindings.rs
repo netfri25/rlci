@@ -59,27 +59,24 @@ pub static STRING: Module = LazyLock::new(|| {
 
             let index = index as usize;
 
-            Ok(Object::Yarn(text.get(index..index + 1).unwrap_or_default().into()))
+            Ok(Object::Yarn(
+                text.get(index..index + 1).unwrap_or_default().into(),
+            ))
         },
     )?;
 
-    scope.define_builtin(
-        "LEN",
-        loc_here!(),
-        [lit!("text")],
-        |me, scope| {
-            let text = me.eval_ident(&lit!("text"), scope)?;
+    scope.define_builtin("LEN", loc_here!(), [lit!("text")], |me, scope| {
+        let text = me.eval_ident(&lit!("text"), scope)?;
 
-            let Some(text) = text.as_yarn() else {
-                return Err(Error::Custom(
-                    loc_here!(),
-                    format!("expected `text` to be a YARN, but got {}", text.typ()),
-                ));
-            };
+        let Some(text) = text.as_yarn() else {
+            return Err(Error::Custom(
+                loc_here!(),
+                format!("expected `text` to be a YARN, but got {}", text.typ()),
+            ));
+        };
 
-            Ok(Object::Numbr(text.len() as i64))
-        }
-    )?;
+        Ok(Object::Numbr(text.len() as i64))
+    })?;
 
     scope.define_builtin(
         "SLICE",
