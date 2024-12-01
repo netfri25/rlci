@@ -67,9 +67,9 @@ impl Scope {
     }
 
     pub fn define(&self, name: String, value: Object) -> Result<(), Error> {
-        if self.vars.lock().unwrap().contains_key(&name) {
-            return Err(Error::AlreadyExists(name));
-        }
+        // if self.vars.lock().unwrap().contains_key(&name) {
+        //     return Err(Error::AlreadyExists(name));
+        // }
 
         self.vars.lock().unwrap().insert(name, value);
         Ok(())
