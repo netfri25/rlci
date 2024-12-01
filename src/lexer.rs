@@ -154,7 +154,7 @@ impl<'a> Lexer<'a> {
             ("IM LIEK", ImLiek),
             ("IM OUTTA YR", ImOuttaYr),
             ("INVISIBLE", Invisible),
-            ("IS NOW A", IsNowA),
+            ("IZ NOW A", IsNowA),
             ("IT", It),
             ("ITZ A", ItzA),
             ("ITZ", Itz),
