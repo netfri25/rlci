@@ -193,6 +193,12 @@ pub struct Break {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
+#[display("SKIP DIS")]
+pub struct Continue {
+    pub loc: Loc
+}
+
+#[derive(Debug, Display, Clone, PartialEq)]
 #[display("FOUNR YR {expr}")]
 pub struct Return {
     pub loc: Loc,
@@ -305,6 +311,7 @@ pub enum Stmt {
     Cond(Cond),
     Switch(Switch),
     Break(Break),
+    Continue(Continue),
     Return(Return),
     Loop(Loop),
     FuncDef(FuncDef),

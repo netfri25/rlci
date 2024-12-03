@@ -103,6 +103,7 @@ pub enum TokenKind {
     Omg,       // switch case
     OmgWtf,    // switch default case
     Gtfo,      // either break or return without value
+    SkipDis,   // continue to the next iteration in the loop
     ImInYr,    // loop beginning
     Uppin,     // auto increment loop variable
     Nerfin,    // auto decrement loop variable
@@ -249,6 +250,7 @@ impl TokenKind {
             TokenKind::Omg => "OMG",
             TokenKind::OmgWtf => "OMG WTF",
             TokenKind::Gtfo => "GTFO",
+            TokenKind::SkipDis => "SKIP DIS",
             TokenKind::ImInYr => "IM IN YR",
             TokenKind::Uppin => "UPPIN",
             TokenKind::Nerfin => "NERFIN",

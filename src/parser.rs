@@ -99,6 +99,7 @@ impl<'a> Parser<'a> {
             TokenKind::ORly => self.parse_cond_stmt().map(Stmt::Cond),
             TokenKind::Wtf => self.parse_switch_stmt().map(Stmt::Switch),
             TokenKind::Gtfo => self.parse_break_stmt().map(Stmt::Break),
+            TokenKind::SkipDis => self.parse_continue_stmt().map(Stmt::Continue),
             TokenKind::FoundYr => self.parse_return_stmt().map(Stmt::Return),
             TokenKind::ImInYr => self.parse_loop_stmt().map(Stmt::Loop),
             TokenKind::HowIz => self.parse_func_def_stmt().map(Stmt::FuncDef),
@@ -276,6 +277,11 @@ impl<'a> Parser<'a> {
     fn parse_break_stmt(&mut self) -> Option<Break> {
         let loc = self.expect(TokenKind::Gtfo)?.loc;
         Some(Break { loc })
+    }
+
+    fn parse_continue_stmt(&mut self) -> Option<Continue> {
+        let loc = self.expect(TokenKind::SkipDis)?.loc;
+        Some(Continue { loc })
     }
 
     fn parse_return_stmt(&mut self) -> Option<Return> {

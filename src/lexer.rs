@@ -145,6 +145,7 @@ impl<'a> Lexer<'a> {
             ("FUNKSHUN", Funkshun),
             ("GIMMEH", Gimmeh),
             ("GTFO", Gtfo),
+            ("SKIP DIS", SkipDis),
             ("HAI", Hai),
             ("HAS A", HasA),
             ("HOW IZ", HowIz),

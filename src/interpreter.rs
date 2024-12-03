@@ -66,6 +66,7 @@ impl Interpreter {
             Stmt::Import(import) => self.eval_import(import, scope),
             Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it(obj)),
             Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
+            Stmt::Continue(Continue { loc }) => Err(Error::Continue(loc.clone())),
             Stmt::Return(Return { loc, expr }) => self
                 .eval_expr(expr, scope)
                 .and_then(|expr| Err(Error::Return(loc.clone(), expr))),
@@ -232,6 +233,7 @@ impl Interpreter {
 
             match self.eval_block(&looop.block, scope) {
                 Err(Error::Break(..)) => break,
+                Err(Error::Continue(..)) => continue,
                 Err(err) => return Err(err),
                 Ok(()) => {}
             }
@@ -1027,6 +1029,9 @@ pub enum Error {
 
     #[error("{0}: can't break from here")]
     Break(Loc),
+
+    #[error("{0}: can't continue from here")]
+    Continue(Loc),
 
     #[error("{0}: can't return from here")]
     Return(Loc, Object),
