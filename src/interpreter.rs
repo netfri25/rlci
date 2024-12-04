@@ -233,7 +233,7 @@ impl Interpreter {
 
             match self.eval_block(&looop.block, scope) {
                 Err(Error::Break(..)) => break,
-                Err(Error::Continue(..)) => continue,
+                Err(Error::Continue(..)) => {},
                 Err(err) => return Err(err),
                 Ok(()) => {}
             }
