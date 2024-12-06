@@ -212,11 +212,11 @@ impl Interpreter {
         let loop_scope = &SharedScope::new(Some(scope.clone()));
         if let Some(var @ Ident::Lit { .. }) = looop.var() {
             match self.eval_ident(var, scope) {
-                Ok(_) => {}
-                Err(Error::Scope(_, scope::Error::DoesNotExist(_))) => {
+                Ok(Object::Noob) | Err(Error::Scope(_, scope::Error::DoesNotExist(_))) => {
                     let value = Object::default_numbr();
                     self.define(var, value, loop_scope, scope)?;
                 }
+                Ok(_) => {}
                 Err(err) => return Err(err),
             }
         };
@@ -400,7 +400,10 @@ impl Interpreter {
                 }
                 Ident::Access { parent, slot, .. } => {
                     let parent_scope = me.eval_scope(parent, scope)?;
-                    return eval_ident_help(me, slot, start_scope, &parent_scope);
+                    return match eval_ident_help(me, slot, start_scope, &parent_scope) {
+                        Err(Error::Scope(_, scope::Error::DoesNotExist(_))) => Ok(Object::Noob),
+                        other => other,
+                    }
                 }
             };
 
@@ -441,18 +444,18 @@ impl Interpreter {
         outer_scope: &SharedScope,
     ) -> Result<Object, Error> {
         let scope = self.eval_scope(scope_ident, outer_scope)?;
-        self.eval_call(loc, scope, name, params, outer_scope)
+        self.eval_call(loc, &scope, name, params, outer_scope)
     }
 
     pub fn eval_call(
         &mut self,
         loc: &Loc,
-        scope: SharedScope,
+        scope: &SharedScope,
         name: &Ident,
         params: &[Expr],
         outer_scope: &SharedScope,
     ) -> Result<Object, Error> {
-        let func_object = self.eval_ident(name, &scope)?;
+        let func_object = self.eval_ident(name, scope)?;
         let Object::Funkshun(func) = func_object else {
             return Err(Error::NotCallable(name.clone()));
         };
@@ -465,7 +468,7 @@ impl Interpreter {
             });
         }
 
-        let scope = SharedScope::new(Some(scope));
+        let scope = SharedScope::new(Some(scope.clone()));
         for (ident, expr) in func.args().iter().zip(params) {
             let object = self.eval_expr(expr, outer_scope)?;
             self.define(ident, object, &scope, &scope)?;
@@ -852,7 +855,7 @@ impl Interpreter {
             Object::Yarn(x) => x.to_string(),
             Object::Bukkit(bukkit) if bukkit.scope().get("to_string").is_ok() => {
                 let ident = Ident::Lit { name: "to_string".into(), loc: loc.clone() };
-                let res = self.eval_call(&loc.clone(), bukkit.scope().clone(), &ident, &[], scope)?;
+                let res = self.eval_call(&loc.clone(), bukkit.scope(), &ident, &[], scope)?;
                 return self.cast_string(loc, &res, scope)
             }
             _ => {
