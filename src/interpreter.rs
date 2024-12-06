@@ -9,6 +9,8 @@ use crate::{ast::*, bindings, parser, scope};
 
 use crate::scope::SharedScope;
 
+// TODO: make sure that casting bukkits to strings with the `to_string` method is implemented
+
 #[derive(Debug, Default)]
 pub struct Interpreter {}
 
@@ -79,14 +81,14 @@ impl Interpreter {
         scope: &SharedScope,
     ) -> Result<(), Error> {
         let object = self.eval_ident(who, scope)?;
-        let result = self.apply_cast(loc, &object, to.typ)?;
+        let result = self.apply_cast(loc, &object, to.typ, scope)?;
         self.assign(who, result, scope)
     }
 
     pub fn eval_print(&mut self, print: &Print, scope: &SharedScope) -> Result<(), Error> {
         let loc = print.loc();
         let value = self.eval_expr(print.expr(), scope)?;
-        let text = self.cast_string(loc, &value)?;
+        let text = self.cast_string(loc, &value, scope)?;
         match print {
             Print::Visible { .. } => println!("{}", text),
             Print::Invisible { .. } => eprintln!("{}", text),
@@ -380,7 +382,7 @@ impl Interpreter {
         scope: &SharedScope,
     ) -> Result<Object, Error> {
         let object = self.eval_expr(&cast.expr, scope)?;
-        self.apply_cast(&cast.loc, &object, cast.typ.typ)
+        self.apply_cast(&cast.loc, &object, cast.typ.typ, scope)
     }
 
     pub fn eval_ident(&mut self, ident: &Ident, scope: &SharedScope) -> Result<Object, Error> {
@@ -394,7 +396,7 @@ impl Interpreter {
                 Ident::Lit { name, .. } => name.to_string(),
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, start_scope)?;
-                    me.cast_string(loc, &object)?
+                    me.cast_string(loc, &object, scope)?
                 }
                 Ident::Access { parent, slot, .. } => {
                     let parent_scope = me.eval_scope(parent, scope)?;
@@ -439,6 +441,17 @@ impl Interpreter {
         outer_scope: &SharedScope,
     ) -> Result<Object, Error> {
         let scope = self.eval_scope(scope_ident, outer_scope)?;
+        self.eval_call(loc, scope, name, params, outer_scope)
+    }
+
+    pub fn eval_call(
+        &mut self,
+        loc: &Loc,
+        scope: SharedScope,
+        name: &Ident,
+        params: &[Expr],
+        outer_scope: &SharedScope,
+    ) -> Result<Object, Error> {
         let func_object = self.eval_ident(name, &scope)?;
         let Object::Funkshun(func) = func_object else {
             return Err(Error::NotCallable(name.clone()));
@@ -717,7 +730,7 @@ impl Interpreter {
                 let mut output = String::new();
                 for param in n_ary_op.params.iter() {
                     let object = self.eval_expr(param, scope)?;
-                    output += &self.cast_string(param.loc(), &object)?;
+                    output += &self.cast_string(param.loc(), &object, scope)?;
                 }
 
                 Ok(Object::Yarn(output.into()))
@@ -731,7 +744,7 @@ impl Interpreter {
         scope: &SharedScope,
     ) -> Result<Object, Error> {
         let object = self.eval_expr(&system_cmd.cmd, scope)?;
-        let cmd = self.cast_string(&system_cmd.loc, &object)?;
+        let cmd = self.cast_string(&system_cmd.loc, &object, scope)?;
         let mut args = cmd.split(' ');
         Command::new(args.next().unwrap_or_default())
             .args(args)
@@ -751,6 +764,7 @@ impl Interpreter {
         loc: &Loc,
         object: &Object,
         typ: ObjectType,
+        scope: &SharedScope,
     ) -> Result<Object, Error> {
         match typ {
             ObjectType::Noob => Ok(Object::Noob),
@@ -758,7 +772,7 @@ impl Interpreter {
             ObjectType::Numbr => self.cast_int(loc, object).map(Object::Numbr),
             ObjectType::Numbar => self.cast_float(loc, object).map(Object::Numbar),
             ObjectType::Yarn => self
-                .cast_string(loc, object)
+                .cast_string(loc, object, scope)
                 .map(|s| Object::Yarn(s.into())),
             _ => Err(Error::CantCast {
                 loc: loc.clone(),
@@ -823,7 +837,7 @@ impl Interpreter {
         Ok(res)
     }
 
-    pub fn cast_string(&mut self, loc: &Loc, value: &Object) -> Result<String, Error> {
+    pub fn cast_string(&mut self, loc: &Loc, value: &Object, scope: &SharedScope) -> Result<String, Error> {
         let res = match value {
             Object::Noob => "NOOB".into(),
             Object::Troof(x) => {
@@ -836,6 +850,11 @@ impl Interpreter {
             Object::Numbr(x) => x.to_string(),
             Object::Numbar(x) => x.to_string(),
             Object::Yarn(x) => x.to_string(),
+            Object::Bukkit(bukkit) if bukkit.scope().get("to_string").is_ok() => {
+                let ident = Ident::Lit { name: "to_string".into(), loc: loc.clone() };
+                let res = self.eval_call(&loc.clone(), bukkit.scope().clone(), &ident, &[], scope)?;
+                return self.cast_string(loc, &res, scope)
+            }
             _ => {
                 return Err(Error::CantCast {
                     loc: loc.clone(),
@@ -867,7 +886,7 @@ impl Interpreter {
                     .map_err(|err| Error::Scope(loc.clone(), err)),
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, original_scope)?;
-                    let name = me.cast_string(loc, &object)?;
+                    let name = me.cast_string(loc, &object, scope)?;
                     scope
                         .assign(&name, object)
                         .map_err(|err| Error::Scope(loc.clone(), err))
@@ -896,7 +915,7 @@ impl Interpreter {
 
             Ident::Srs { expr, loc } => {
                 let object = self.eval_expr(expr, scope)?;
-                let name = self.cast_string(loc, &object)?;
+                let name = self.cast_string(loc, &object, scope)?;
                 define_scope
                     .define(name, value)
                     .map_err(|err| Error::Scope(loc.clone(), err))
@@ -931,7 +950,7 @@ impl Interpreter {
 
                 Ident::Srs { expr, loc } => {
                     let object = me.eval_expr(expr, original_scope)?;
-                    let name = me.cast_string(loc, &object)?;
+                    let name = me.cast_string(loc, &object, scope)?;
                     scope.insert(name, object);
                     Ok(())
                 }
@@ -991,7 +1010,7 @@ impl Interpreter {
                             loc: loc.clone(),
                         };
                         let object = self.eval_ident(&ident, scope)?;
-                        let text = self.cast_string(loc, &object)?;
+                        let text = self.cast_string(loc, &object, scope)?;
                         output.push_str(&text);
                         continue;
                     }
