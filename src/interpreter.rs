@@ -308,7 +308,7 @@ impl Interpreter {
             scope.clone()
         };
 
-        let bukkit = Bukkit::new(parent.clone());
+        let bukkit = Bukkit::new(scope.clone());
         let object_scope = bukkit.scope().clone();
         let object = Object::Bukkit(Arc::new(bukkit));
         self.define(name, object.clone(), define_scope, scope)?;
