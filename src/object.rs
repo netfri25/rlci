@@ -1,8 +1,8 @@
 use derive_more::Display;
 
+use std::any::Any;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Weak};
-use std::any::Any;
 
 use crate::ast::{Block, FuncArg};
 use crate::interpreter::{self, Interpreter};
@@ -46,7 +46,7 @@ pub enum Object {
     Yarn(Arc<str>),
     Bukkit(Arc<Bukkit>),
     WeakBukkit(Weak<Bukkit>),
-    Funkshun(Arc<Funkshun>),
+    Funkshun(Arc<Funkshun>, Weak<Scope>),
     Blob(Arc<dyn Any + Send + Sync>),
 }
 
@@ -61,7 +61,7 @@ impl PartialEq for Object {
             (Object::Bukkit(x), Object::Bukkit(y)) => {
                 std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y))
             }
-            (Object::Funkshun(x), Object::Funkshun(y)) => {
+            (Object::Funkshun(x, _), Object::Funkshun(y, _)) => {
                 std::ptr::addr_eq(Arc::as_ptr(x), Arc::as_ptr(y))
             }
             _ => false,
@@ -80,7 +80,7 @@ impl Object {
             Self::Yarn(..) => ObjectType::Yarn,
             Self::Bukkit(..) => ObjectType::Bukkit,
             Self::WeakBukkit(..) => ObjectType::Bukkit,
-            Self::Funkshun(_) => ObjectType::Funkshun,
+            Self::Funkshun(..) => ObjectType::Funkshun,
             Self::Blob(_) => ObjectType::Blob,
         }
     }
@@ -110,10 +110,13 @@ impl Object {
     }
 
     pub fn default_funkshun() -> Self {
-        Self::Funkshun(Arc::new(Funkshun::Normal {
-            args: Default::default(),
-            block: Default::default(),
-        }))
+        Self::Funkshun(
+            Arc::new(Funkshun::Normal {
+                args: Default::default(),
+                block: Default::default(),
+            }),
+            Weak::default()
+        )
     }
 
     pub fn as_noob(&self) -> Option<()> {
@@ -162,8 +165,8 @@ impl Object {
         }
     }
 
-    pub fn as_funkshun(&self) -> Option<&Funkshun> {
-        if let Self::Funkshun(v) = self {
+    pub fn as_funkshun(&self) -> Option<&Arc<Funkshun>> {
+        if let Self::Funkshun(v, ..) = self {
             Some(v)
         } else {
             None
@@ -223,7 +226,7 @@ impl Object {
     /// [`Bukkit`]: Object::Bukkit
     #[must_use]
     pub fn is_bukkit(&self) -> bool {
-        matches!(self, Self::Bukkit(..))
+        matches!(self, Self::Bukkit(..) | Self::WeakBukkit(..))
     }
 
     /// Returns `true` if the object value is [`Funkshun`].

@@ -228,7 +228,7 @@ impl Interpreter {
         loop {
             let scope = Arc::new(Scope::new(Arc::downgrade(&loop_scope)));
             if let Some(ref guard) = looop.guard {
-                let cond = self.eval_expr(guard.cond(), &scope)?;
+                let cond = self.eval_expr(guard.cond(), &loop_scope)?;
                 let troof = self.cast_bool(&cond);
                 match guard {
                     LoopGuard::Til { .. } if troof => break,
@@ -293,7 +293,7 @@ impl Interpreter {
             args: func_def.args.clone(),
             block: func_def.block.clone(),
         };
-        let object = Object::Funkshun(Arc::new(funkshun));
+        let object = Object::Funkshun(Arc::new(funkshun), Arc::downgrade(define_scope));
         self.define(&func_def.name, object, define_scope, scope)
     }
 
@@ -309,7 +309,7 @@ impl Interpreter {
         let bukkit = Arc::new(Bukkit::new(Arc::downgrade(scope)));
         let object_scope = bukkit.scope().clone();
         let object = Object::Bukkit(bukkit.clone());
-        self.define(name, object.clone(), define_scope, scope)?;
+        self.define(name, object.clone(), define_scope, &object_scope)?;
 
         object_scope
             .define("ME".to_string(), Object::WeakBukkit(Arc::downgrade(&bukkit)))
@@ -320,6 +320,16 @@ impl Interpreter {
                 Object::Bukkit(bukkit) => Object::WeakBukkit(Arc::downgrade(&bukkit)),
                 other => other
             };
+
+            if let Some(bukkit) = parent_object.as_bukkit() {
+                for (name, object) in bukkit.scope().vars().iter() {
+                    if let Some(funkshun) = object.as_funkshun() {
+                        object_scope
+                            .define(name.clone(), Object::Funkshun(funkshun.clone(), Arc::downgrade(&object_scope)))
+                            .ok();
+                    }
+                }
+            }
 
             object_scope
                 .define("parent".to_string(), parent_object)
@@ -444,7 +454,7 @@ impl Interpreter {
         outer_scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         let func_object = self.eval_ident(name, scope)?;
-        let Object::Funkshun(func) = func_object else {
+        let Object::Funkshun(func, parent_scope) = func_object else {
             return Err(Error::NotCallable(name.clone()));
         };
 
@@ -456,7 +466,7 @@ impl Interpreter {
             });
         }
 
-        let scope = Arc::new(Scope::new(Arc::downgrade(scope)));
+        let scope = Arc::new(Scope::new(parent_scope));
         for (ident, expr) in func.args().iter().zip(params) {
             let object = self.eval_expr(expr, outer_scope)?;
             self.define(ident, object, &scope, &scope)?;
@@ -782,7 +792,7 @@ impl Interpreter {
             Object::Yarn(value) => !value.is_empty(),
             Object::Bukkit(bukkit) => !bukkit.is_empty(),
             Object::WeakBukkit(bukkit) => !bukkit.upgrade().is_none_or(|bukkit| bukkit.is_empty()),
-            Object::Funkshun(funkshun) => !funkshun.is_empty(),
+            Object::Funkshun(funkshun, ..) => !funkshun.is_empty(),
             Object::Blob(blob) => !blob.is::<()>(),
         }
     }
@@ -910,8 +920,8 @@ impl Interpreter {
     ) -> Result<(), Error> {
         match target {
             Ident::Lit { name, loc } => define_scope
-                .define(name.to_string(), value)
-                .map_err(|err| Error::Scope(loc.clone(), err)),
+                    .define(name.to_string(), value)
+                    .map_err(|err| Error::Scope(loc.clone(), err)),
 
             Ident::Srs { expr, loc } => {
                 let object = self.eval_expr(expr, scope)?;

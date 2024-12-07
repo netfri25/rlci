@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::{Arc, Mutex, Weak};
 
 use crate::ast::FuncArg;
@@ -39,13 +40,20 @@ impl Scope {
         let args = args.into();
         self.define(
             name.into(),
-            Object::Funkshun(Arc::new(Funkshun::Builtin {
-                loc: loc.clone(),
-                args,
-                callback,
-            })),
+            Object::Funkshun(
+                Arc::new(Funkshun::Builtin {
+                    loc: loc.clone(),
+                    args,
+                    callback,
+                }),
+                Weak::default(),
+            ),
         )
         .map_err(|err| interpreter::Error::Scope(loc, err))
+    }
+
+    pub fn vars(&self) -> impl Deref<Target = HashMap<String, Object>> + use<'_> {
+        self.vars.lock().unwrap()
     }
 
     pub fn define(&self, name: String, value: Object) -> Result<(), Error> {
@@ -70,14 +78,18 @@ impl Scope {
             return Err(Error::DoesNotExist(name.to_string()));
         }
 
-        if let Some(res) = self.parent.upgrade().and_then(|parent| parent.get(name).ok()) {
-            return Ok(res)
-        }
-
         if let Ok(parent) = self.get("parent") {
             if let Some(res) = parent.as_bukkit().and_then(|parent| parent.get(name).ok()) {
                 return Ok(res);
             }
+        }
+
+        if let Some(res) = self
+            .parent
+            .upgrade()
+            .and_then(|parent| parent.get(name).ok())
+        {
+            return Ok(res);
         }
 
         Err(Error::DoesNotExist(name.to_string()))
@@ -95,10 +107,6 @@ impl Scope {
             .and_then(|parent| parent.assign(name, value))
     }
 
-    pub fn remove(&self, name: &str) -> Result<Object, Error> {
-        self.vars.lock().unwrap().remove(name).ok_or_else(|| Error::DoesNotExist(name.to_string()))
-    }
-
     pub fn get_it(&self) -> Object {
         self.it.lock().unwrap().clone()
     }
@@ -110,7 +118,9 @@ impl Scope {
 
 impl std::fmt::Debug for Scope {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let lock = self.vars.lock().unwrap();
+        let Some(lock) = self.vars.try_lock().ok() else {
+            return write!(f, "(locked)");
+        };
         let mut f = f.debug_map();
         for (key, value) in lock.iter() {
             if key == "ME" {
@@ -122,6 +132,7 @@ impl std::fmt::Debug for Scope {
             }
         }
 
+        f.entry(&"Scope.parent", &self.parent.upgrade());
         f.finish()
     }
 }
