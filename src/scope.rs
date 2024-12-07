@@ -78,18 +78,18 @@ impl Scope {
             return Err(Error::DoesNotExist(name.to_string()));
         }
 
-        if let Ok(parent) = self.get("parent") {
-            if let Some(res) = parent.as_bukkit().and_then(|parent| parent.get(name).ok()) {
-                return Ok(res);
-            }
-        }
-
         if let Some(res) = self
             .parent
             .upgrade()
             .and_then(|parent| parent.get(name).ok())
         {
             return Ok(res);
+        }
+
+        if let Ok(parent) = self.get("parent") {
+            if let Some(res) = parent.as_bukkit().and_then(|parent| parent.get(name).ok()) {
+                return Ok(res);
+            }
         }
 
         Err(Error::DoesNotExist(name.to_string()))
