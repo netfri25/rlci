@@ -1,38 +1,20 @@
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use crate::ast::FuncArg;
 use crate::interpreter;
 use crate::object::{BuiltinFn, Funkshun, Object};
 use crate::token::Loc;
 
-#[derive(Debug, Clone, Default)]
-pub struct SharedScope(Arc<Scope>);
-
-impl SharedScope {
-    pub fn new(parent: Option<SharedScope>) -> Self {
-        Self(Arc::new(Scope::new(parent)))
-    }
-}
-
-impl Deref for SharedScope {
-    type Target = Scope;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 #[derive(Default)]
 pub struct Scope {
     vars: Mutex<HashMap<String, Object>>,
     it: Mutex<Object>,
-    parent: Option<SharedScope>,
+    parent: Weak<Scope>,
 }
 
 impl Scope {
-    fn new(parent: Option<SharedScope>) -> Self {
+    pub fn new(parent: Weak<Scope>) -> Self {
         let vars = Default::default();
         let it = Default::default();
         Self { vars, it, parent }
@@ -84,10 +66,21 @@ impl Scope {
             return Ok(obj);
         }
 
-        self.parent
-            .as_ref()
-            .ok_or_else(|| Error::DoesNotExist(name.to_string()))
-            .and_then(|parent| parent.get(name))
+        if name == "parent" {
+            return Err(Error::DoesNotExist(name.to_string()));
+        }
+
+        if let Some(res) = self.parent.upgrade().and_then(|parent| parent.get(name).ok()) {
+            return Ok(res)
+        }
+
+        if let Ok(parent) = self.get("parent") {
+            if let Some(res) = parent.as_bukkit().and_then(|parent| parent.get(name).ok()) {
+                return Ok(res);
+            }
+        }
+
+        Err(Error::DoesNotExist(name.to_string()))
     }
 
     pub fn assign(&self, name: &str, value: Object) -> Result<(), Error> {
@@ -97,9 +90,13 @@ impl Scope {
         }
 
         self.parent
-            .as_ref()
+            .upgrade()
             .ok_or_else(|| Error::DoesNotExist(name.to_string()))
             .and_then(|parent| parent.assign(name, value))
+    }
+
+    pub fn remove(&self, name: &str) -> Result<Object, Error> {
+        self.vars.lock().unwrap().remove(name).ok_or_else(|| Error::DoesNotExist(name.to_string()))
     }
 
     pub fn get_it(&self) -> Object {
@@ -131,9 +128,8 @@ impl std::fmt::Debug for Scope {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
-    #[error("redefinition of `{0}`")]
-    AlreadyExists(String),
-
+    // #[error("redefinition of `{0}`")]
+    // AlreadyExists(String),
     #[error("`{0}` does not exist")]
     DoesNotExist(String),
 }

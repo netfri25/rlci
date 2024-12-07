@@ -7,7 +7,7 @@ use crate::object::{Bukkit, Funkshun, Object, ObjectType};
 use crate::token::Loc;
 use crate::{ast::*, bindings, parser, scope};
 
-use crate::scope::SharedScope;
+use crate::scope::Scope;
 
 // TODO: make sure that casting bukkits to strings with the `to_string` method is implemented
 
@@ -15,7 +15,7 @@ use crate::scope::SharedScope;
 pub struct Interpreter {}
 
 impl Interpreter {
-    pub fn eval_file(&mut self, path: &(impl AsRef<Path> + ?Sized)) -> Result<SharedScope, Error> {
+    pub fn eval_file(&mut self, path: &(impl AsRef<Path> + ?Sized)) -> Result<Arc<Scope>, Error> {
         let path = path.as_ref();
         let input = std::fs::read_to_string(path).map_err(|err| Error::ReadFile {
             path: path.to_string_lossy().to_string(),
@@ -29,8 +29,8 @@ impl Interpreter {
         &mut self,
         source: &str,
         loc: Loc,
-        scope: Option<SharedScope>,
-    ) -> Result<SharedScope, Error> {
+        scope: Option<Arc<Scope>>,
+    ) -> Result<Arc<Scope>, Error> {
         let module = parser::parse(source, loc).map_err(Error::Parser)?;
         self.eval_module(module, scope)
     }
@@ -38,8 +38,8 @@ impl Interpreter {
     pub fn eval_module(
         &mut self,
         module: Module,
-        scope: Option<SharedScope>,
-    ) -> Result<SharedScope, Error> {
+        scope: Option<Arc<Scope>>,
+    ) -> Result<Arc<Scope>, Error> {
         let scope = scope.unwrap_or_default();
         for stmt in module.block.iter() {
             self.eval_stmt(stmt, &scope)?
@@ -48,7 +48,7 @@ impl Interpreter {
         Ok(scope)
     }
 
-    pub fn eval_stmt(&mut self, stmt: &Stmt, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_stmt(&mut self, stmt: &Stmt, scope: &Arc<Scope>) -> Result<(), Error> {
         match stmt {
             Stmt::Cast(cast) => self.eval_cast_stmt(cast, scope),
             Stmt::Print(print) => self.eval_print(print, scope),
@@ -69,23 +69,27 @@ impl Interpreter {
             Stmt::Expr(expr) => self.eval_expr(expr, scope).map(|obj| scope.set_it(obj)),
             Stmt::Break(Break { loc }) => Err(Error::Break(loc.clone())),
             Stmt::Continue(Continue { loc }) => Err(Error::Continue(loc.clone())),
-            Stmt::Return(Return { loc, expr }) => self
-                .eval_expr(expr, scope)
-                .and_then(|expr| Err(Error::Return(loc.clone(), expr))),
+            Stmt::Return(Return { loc, expr }) => self.eval_return_stmt(loc, expr, scope),
         }
+    }
+
+    pub fn eval_return_stmt(&mut self, loc: &Loc, expr: &Expr, scope: &Arc<Scope>) -> Result<(), Error> {
+        let res = self.eval_expr(expr, scope)?;
+        scope.set_it(res);
+        Err(Error::Return(loc.clone(), scope.get_it()))
     }
 
     pub fn eval_cast_stmt(
         &mut self,
         CastStmt { loc, who, to }: &CastStmt,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<(), Error> {
         let object = self.eval_ident(who, scope)?;
         let result = self.apply_cast(loc, &object, to.typ, scope)?;
         self.assign(who, result, scope)
     }
 
-    pub fn eval_print(&mut self, print: &Print, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_print(&mut self, print: &Print, scope: &Arc<Scope>) -> Result<(), Error> {
         let loc = print.loc();
         let value = self.eval_expr(print.expr(), scope)?;
         let text = self.cast_string(loc, &value, scope)?;
@@ -97,7 +101,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn eval_input(&mut self, input: &Input, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_input(&mut self, input: &Input, scope: &Arc<Scope>) -> Result<(), Error> {
         let mut line = String::new();
         std::io::stdin()
             .read_line(&mut line)
@@ -112,12 +116,12 @@ impl Interpreter {
         self.insert(target, value, scope)
     }
 
-    pub fn eval_assign(&mut self, assign: &Assign, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_assign(&mut self, assign: &Assign, scope: &Arc<Scope>) -> Result<(), Error> {
         let value = self.eval_expr(&assign.expr, scope)?;
         self.assign(&assign.target, value, scope)
     }
 
-    pub fn eval_declare(&mut self, declare: &Declare, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_declare(&mut self, declare: &Declare, scope: &Arc<Scope>) -> Result<(), Error> {
         let object = match &declare.init {
             None => Object::default_noob(),
             Some(Init::Expr { expr, .. }) => self.eval_expr(expr, scope)?,
@@ -130,7 +134,7 @@ impl Interpreter {
                 ObjectType::Numbr => Object::default_numbr(),
                 ObjectType::Numbar => Object::default_numbar(),
                 ObjectType::Yarn => Object::default_yarn(),
-                ObjectType::Bukkit => Object::default_bukkit(scope.clone()),
+                ObjectType::Bukkit => Object::default_bukkit(Arc::downgrade(scope)),
                 ObjectType::Funkshun => Object::default_funkshun(),
                 ObjectType::Blob => Object::Blob(Arc::new(())),
             },
@@ -151,7 +155,7 @@ impl Interpreter {
         self.define(&declare.name, object, define_scope, scope)
     }
 
-    pub fn eval_cond(&mut self, cond: &Cond, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_cond(&mut self, cond: &Cond, scope: &Arc<Scope>) -> Result<(), Error> {
         let it = scope.get_it();
         let condition = self.cast_bool(&it);
 
@@ -174,7 +178,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn eval_switch(&mut self, switch: &Switch, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_switch(&mut self, switch: &Switch, scope: &Arc<Scope>) -> Result<(), Error> {
         let it = scope.get_it();
 
         let mut cases = switch.cases.iter().peekable();
@@ -208,13 +212,13 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_loop(&mut self, looop: &Loop, scope: &SharedScope) -> Result<(), Error> {
-        let loop_scope = &SharedScope::new(Some(scope.clone()));
+    pub fn eval_loop(&mut self, looop: &Loop, scope: &Arc<Scope>) -> Result<(), Error> {
+        let loop_scope = Arc::new(Scope::new(Arc::downgrade(scope)));
         if let Some(var @ Ident::Lit { .. }) = looop.var() {
             match self.eval_ident(var, scope) {
                 Ok(Object::Noob) | Err(Error::Scope(_, scope::Error::DoesNotExist(_))) => {
                     let value = Object::default_numbr();
-                    self.define(var, value, loop_scope, scope)?;
+                    self.define(var, value, &loop_scope, scope)?;
                 }
                 Ok(_) => {}
                 Err(err) => return Err(err),
@@ -222,9 +226,9 @@ impl Interpreter {
         };
 
         loop {
-            let scope = &SharedScope::new(Some(loop_scope.clone()));
+            let scope = Arc::new(Scope::new(Arc::downgrade(&loop_scope)));
             if let Some(ref guard) = looop.guard {
-                let cond = self.eval_expr(guard.cond(), scope)?;
+                let cond = self.eval_expr(guard.cond(), &scope)?;
                 let troof = self.cast_bool(&cond);
                 match guard {
                     LoopGuard::Til { .. } if troof => break,
@@ -233,9 +237,9 @@ impl Interpreter {
                 }
             };
 
-            match self.eval_block(&looop.block, scope) {
+            match self.eval_block(&looop.block, &scope) {
                 Err(Error::Break(..)) => break,
-                Err(Error::Continue(..)) => {},
+                Err(Error::Continue(..)) => {}
                 Err(err) => return Err(err),
                 Ok(()) => {}
             }
@@ -245,22 +249,22 @@ impl Interpreter {
                 let target = update.target();
                 match update {
                     LoopUpdate::Uppin { .. } => {
-                        let object = self.eval_ident(target, scope)?;
+                        let object = self.eval_ident(target, &scope)?;
                         let Some(value) = object.as_numbr() else {
                             return Err(Error::LoopVarNotNumbr(target.clone()));
                         };
 
                         let value = Object::Numbr(value + 1);
-                        self.assign(target, value, scope)?;
+                        self.assign(target, value, &scope)?;
                     }
                     LoopUpdate::Nerfin { .. } => {
-                        let object = self.eval_ident(target, scope)?;
+                        let object = self.eval_ident(target, &scope)?;
                         let Some(value) = object.as_numbr() else {
                             return Err(Error::LoopVarNotNumbr(target.clone()));
                         };
 
                         let value = Object::Numbr(value - 1);
-                        self.assign(target, value, scope)?;
+                        self.assign(target, value, &scope)?;
                     }
                     LoopUpdate::UnaryFunction {
                         scope: scope_ident,
@@ -272,9 +276,9 @@ impl Interpreter {
                             scope_ident,
                             func,
                             &[Expr::Ident(target.clone())],
-                            scope,
+                            &scope,
                         )?;
-                        self.assign(target, value, scope)?;
+                        self.assign(target, value, &scope)?;
                     }
                 }
             }
@@ -283,7 +287,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn eval_func_def(&mut self, func_def: &FuncDef, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_func_def(&mut self, func_def: &FuncDef, scope: &Arc<Scope>) -> Result<(), Error> {
         let define_scope = &self.eval_scope(&func_def.scope, scope)?;
         let funkshun = Funkshun::Normal {
             args: func_def.args.clone(),
@@ -299,45 +303,33 @@ impl Interpreter {
         name: &Ident,
         inherit: Option<&Ident>,
         block: &Block,
-        define_scope: &SharedScope,
-        scope: &SharedScope,
+        define_scope: &Arc<Scope>,
+        scope: &Arc<Scope>,
     ) -> Result<(), Error> {
-        let parent = if let Some(inherit) = inherit {
-            self.eval_scope(inherit, scope)?
-        } else {
-            scope.clone()
-        };
-
-        let bukkit = Bukkit::new(scope.clone());
+        let bukkit = Arc::new(Bukkit::new(Arc::downgrade(scope)));
         let object_scope = bukkit.scope().clone();
-        let object = Object::Bukkit(Arc::new(bukkit));
+        let object = Object::Bukkit(bukkit.clone());
         self.define(name, object.clone(), define_scope, scope)?;
-        self.define(
-            &Ident::Lit {
-                name: "ME".into(),
-                loc,
-            },
-            object.clone(),
-            &object_scope,
-            scope,
-        )?;
 
-        if let Some(inherit) = inherit {
-            self.define(
-                &Ident::Lit {
-                    name: "parent".into(),
-                    loc: inherit.loc().clone(),
-                },
-                Object::Bukkit(Arc::new(Bukkit::from_scope(parent))),
-                &object_scope,
-                scope,
-            )?;
+        object_scope
+            .define("ME".to_string(), Object::WeakBukkit(Arc::downgrade(&bukkit)))
+            .map_err(|err| Error::Scope(loc.clone(), err))?;
+
+        if let Some(inherit_ident) = inherit {
+            let parent_object = match self.eval_ident(inherit_ident, scope)? {
+                Object::Bukkit(bukkit) => Object::WeakBukkit(Arc::downgrade(&bukkit)),
+                other => other
+            };
+
+            object_scope
+                .define("parent".to_string(), parent_object)
+                .ok();
         }
 
         self.eval_block(block, &object_scope)
     }
 
-    pub fn eval_import(&mut self, import: &Import, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_import(&mut self, import: &Import, scope: &Arc<Scope>) -> Result<(), Error> {
         // TODO: support importing modules from modules, e.g. `CAN HAS MOD'Z SUBMOD?`
         let name = import.name.to_string();
         let module = if let Some(lazy_module) = bindings::MODULES.get(name.as_str()) {
@@ -347,11 +339,11 @@ impl Interpreter {
             self.eval_file(&file_path)?
         };
 
-        let object = Object::default_bukkit(module);
+        let object = Object::Bukkit(Arc::new(Bukkit::from_scope(module)));
         self.define(&import.name, object, scope, scope)
     }
 
-    pub fn eval_expr(&mut self, expr: &Expr, scope: &SharedScope) -> Result<Object, Error> {
+    pub fn eval_expr(&mut self, expr: &Expr, scope: &Arc<Scope>) -> Result<Object, Error> {
         match expr {
             Expr::Cast(cast) => self.eval_cast_expr(cast, scope),
             Expr::Bool(BoolLit { value, .. }) => Ok(Object::Troof(*value)),
@@ -376,21 +368,17 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_cast_expr(
-        &mut self,
-        cast: &CastExpr,
-        scope: &SharedScope,
-    ) -> Result<Object, Error> {
+    pub fn eval_cast_expr(&mut self, cast: &CastExpr, scope: &Arc<Scope>) -> Result<Object, Error> {
         let object = self.eval_expr(&cast.expr, scope)?;
         self.apply_cast(&cast.loc, &object, cast.typ.typ, scope)
     }
 
-    pub fn eval_ident(&mut self, ident: &Ident, scope: &SharedScope) -> Result<Object, Error> {
+    pub fn eval_ident(&mut self, ident: &Ident, scope: &Arc<Scope>) -> Result<Object, Error> {
         fn eval_ident_help(
             me: &mut Interpreter,
             ident: &Ident,
-            start_scope: &SharedScope,
-            scope: &SharedScope,
+            start_scope: &Arc<Scope>,
+            scope: &Arc<Scope>,
         ) -> Result<Object, Error> {
             let name = match ident {
                 Ident::Lit { name, .. } => name.to_string(),
@@ -403,7 +391,7 @@ impl Interpreter {
                     return match eval_ident_help(me, slot, start_scope, &parent_scope) {
                         Err(Error::Scope(_, scope::Error::DoesNotExist(_))) => Ok(Object::Noob),
                         other => other,
-                    }
+                    };
                 }
             };
 
@@ -418,8 +406,8 @@ impl Interpreter {
     pub fn eval_scope(
         &mut self,
         scope_ident: &Ident,
-        scope: &SharedScope,
-    ) -> Result<SharedScope, Error> {
+        scope: &Arc<Scope>,
+    ) -> Result<Arc<Scope>, Error> {
         if let Ident::Lit { name, .. } = scope_ident {
             if name.as_ref() == "I" {
                 return Ok(scope.clone());
@@ -441,7 +429,7 @@ impl Interpreter {
         scope_ident: &Ident,
         name: &Ident,
         params: &[Expr],
-        outer_scope: &SharedScope,
+        outer_scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         let scope = self.eval_scope(scope_ident, outer_scope)?;
         self.eval_call(loc, &scope, name, params, outer_scope)
@@ -450,10 +438,10 @@ impl Interpreter {
     pub fn eval_call(
         &mut self,
         loc: &Loc,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
         name: &Ident,
         params: &[Expr],
-        outer_scope: &SharedScope,
+        outer_scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         let func_object = self.eval_ident(name, scope)?;
         let Object::Funkshun(func) = func_object else {
@@ -468,7 +456,7 @@ impl Interpreter {
             });
         }
 
-        let scope = SharedScope::new(Some(scope.clone()));
+        let scope = Arc::new(Scope::new(Arc::downgrade(scope)));
         for (ident, expr) in func.args().iter().zip(params) {
             let object = self.eval_expr(expr, outer_scope)?;
             self.define(ident, object, &scope, &scope)?;
@@ -492,7 +480,7 @@ impl Interpreter {
     pub fn eval_unary_op(
         &mut self,
         unary_op: &UnaryOp,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         let value = self.eval_expr(&unary_op.expr, scope)?;
         match &unary_op.kind {
@@ -506,7 +494,7 @@ impl Interpreter {
     pub fn eval_binary_op(
         &mut self,
         binary_op: &BinaryOp,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         let lhs = self.eval_expr(&binary_op.lhs, scope)?;
         let rhs = self.eval_expr(&binary_op.rhs, scope)?;
@@ -702,7 +690,7 @@ impl Interpreter {
     pub fn eval_n_ary_op(
         &mut self,
         n_ary_op: &NaryOp,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         match n_ary_op.kind {
             NaryOpKind::All => {
@@ -744,7 +732,7 @@ impl Interpreter {
     pub fn eval_system_cmd(
         &mut self,
         system_cmd: &SystemCmd,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         let object = self.eval_expr(&system_cmd.cmd, scope)?;
         let cmd = self.cast_string(&system_cmd.loc, &object, scope)?;
@@ -756,7 +744,7 @@ impl Interpreter {
             .map_err(|err| Error::Command(system_cmd.loc.clone(), err.into()))
     }
 
-    pub fn eval_block(&mut self, block: &Block, scope: &SharedScope) -> Result<(), Error> {
+    pub fn eval_block(&mut self, block: &Block, scope: &Arc<Scope>) -> Result<(), Error> {
         block
             .iter()
             .try_for_each(|stmt| self.eval_stmt(stmt, scope))
@@ -767,7 +755,7 @@ impl Interpreter {
         loc: &Loc,
         object: &Object,
         typ: ObjectType,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
         match typ {
             ObjectType::Noob => Ok(Object::Noob),
@@ -793,6 +781,7 @@ impl Interpreter {
             &Object::Numbar(value) => value != 0.,
             Object::Yarn(value) => !value.is_empty(),
             Object::Bukkit(bukkit) => !bukkit.is_empty(),
+            Object::WeakBukkit(bukkit) => !bukkit.upgrade().is_none_or(|bukkit| bukkit.is_empty()),
             Object::Funkshun(funkshun) => !funkshun.is_empty(),
             Object::Blob(blob) => !blob.is::<()>(),
         }
@@ -840,7 +829,12 @@ impl Interpreter {
         Ok(res)
     }
 
-    pub fn cast_string(&mut self, loc: &Loc, value: &Object, scope: &SharedScope) -> Result<String, Error> {
+    pub fn cast_string(
+        &mut self,
+        loc: &Loc,
+        value: &Object,
+        scope: &Arc<Scope>,
+    ) -> Result<String, Error> {
         let res = match value {
             Object::Noob => "NOOB".into(),
             Object::Troof(x) => {
@@ -854,9 +848,12 @@ impl Interpreter {
             Object::Numbar(x) => x.to_string(),
             Object::Yarn(x) => x.to_string(),
             Object::Bukkit(bukkit) if bukkit.scope().get("to_string").is_ok() => {
-                let ident = Ident::Lit { name: "to_string".into(), loc: loc.clone() };
+                let ident = Ident::Lit {
+                    name: "to_string".into(),
+                    loc: loc.clone(),
+                };
                 let res = self.eval_call(&loc.clone(), bukkit.scope(), &ident, &[], scope)?;
-                return self.cast_string(loc, &res, scope)
+                return self.cast_string(loc, &res, scope);
             }
             _ => {
                 return Err(Error::CantCast {
@@ -874,14 +871,14 @@ impl Interpreter {
         &mut self,
         target: &Ident,
         object: Object,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<(), Error> {
         fn helper(
             me: &mut Interpreter,
             target: &Ident,
             object: Object,
-            scope: &SharedScope,
-            original_scope: &SharedScope,
+            scope: &Arc<Scope>,
+            original_scope: &Arc<Scope>,
         ) -> Result<(), Error> {
             match target {
                 Ident::Lit { name, loc } => scope
@@ -908,8 +905,8 @@ impl Interpreter {
         &mut self,
         target: &Ident,
         value: Object,
-        define_scope: &SharedScope,
-        scope: &SharedScope,
+        define_scope: &Arc<Scope>,
+        scope: &Arc<Scope>,
     ) -> Result<(), Error> {
         match target {
             Ident::Lit { name, loc } => define_scope
@@ -936,14 +933,14 @@ impl Interpreter {
         &mut self,
         target: &Ident,
         value: Object,
-        original_scope: &SharedScope,
+        original_scope: &Arc<Scope>,
     ) -> Result<(), Error> {
         fn helper(
             me: &mut Interpreter,
             target: &Ident,
             value: Object,
-            scope: &SharedScope,
-            original_scope: &SharedScope,
+            scope: &Arc<Scope>,
+            original_scope: &Arc<Scope>,
         ) -> Result<(), Error> {
             match target {
                 Ident::Lit { name, .. } => {
@@ -972,7 +969,7 @@ impl Interpreter {
         &mut self,
         loc: &Loc,
         input: &str,
-        scope: &SharedScope,
+        scope: &Arc<Scope>,
     ) -> Result<Arc<str>, Error> {
         let mut output = String::new();
 

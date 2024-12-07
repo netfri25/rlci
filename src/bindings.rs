@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 
 use crate::interpreter::Error;
 use crate::loc_here;
 use crate::object::Object;
-use crate::scope::SharedScope;
+use crate::scope::Scope;
 
 macro_rules! lit {
     ($name:expr) => {
@@ -17,9 +17,9 @@ macro_rules! lit {
     };
 }
 
-pub type Module = LazyLock<Result<SharedScope, Error>>;
+pub type Module = LazyLock<Result<Arc<Scope>, Error>>;
 
-pub static MODULES: LazyLock<HashMap<&'static str, &'static LazyLock<Result<SharedScope, Error>>>> =
+pub static MODULES: LazyLock<HashMap<&'static str, &'static Module>> =
     LazyLock::new(|| {
         let mut map = HashMap::new();
         map.insert("STRING", &STRING);
@@ -28,7 +28,7 @@ pub static MODULES: LazyLock<HashMap<&'static str, &'static LazyLock<Result<Shar
     });
 
 pub static STRING: Module = LazyLock::new(|| {
-    let scope = SharedScope::new(None);
+    let scope = Arc::new(Scope::new(Weak::new()));
     scope.define_builtin(
         "AT",
         loc_here!(),
@@ -128,7 +128,7 @@ pub static STRING: Module = LazyLock::new(|| {
 });
 
 pub static FILE: Module = LazyLock::new(|| {
-    let scope = SharedScope::new(None);
+    let scope = Arc::new(Scope::new(Weak::new()));
 
     scope.define_builtin("OPEN", loc_here!(), [lit!("path")], |me, scope| {
         let path = me.eval_ident(&lit!("path"), scope)?;

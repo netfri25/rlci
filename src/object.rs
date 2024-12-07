@@ -1,12 +1,12 @@
 use derive_more::Display;
 
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::any::Any;
 
 use crate::ast::{Block, FuncArg};
 use crate::interpreter::{self, Interpreter};
-use crate::scope::SharedScope;
+use crate::scope::Scope;
 use crate::token::Loc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Display)]
@@ -45,6 +45,7 @@ pub enum Object {
     Numbar(f64),
     Yarn(Arc<str>),
     Bukkit(Arc<Bukkit>),
+    WeakBukkit(Weak<Bukkit>),
     Funkshun(Arc<Funkshun>),
     Blob(Arc<dyn Any + Send + Sync>),
 }
@@ -78,6 +79,7 @@ impl Object {
             Self::Numbar(..) => ObjectType::Numbar,
             Self::Yarn(..) => ObjectType::Yarn,
             Self::Bukkit(..) => ObjectType::Bukkit,
+            Self::WeakBukkit(..) => ObjectType::Bukkit,
             Self::Funkshun(_) => ObjectType::Funkshun,
             Self::Blob(_) => ObjectType::Blob,
         }
@@ -103,7 +105,7 @@ impl Object {
         Self::Yarn("".into())
     }
 
-    pub fn default_bukkit(parent: SharedScope) -> Self {
+    pub fn default_bukkit(parent: Weak<Scope>) -> Self {
         Self::Bukkit(Arc::new(Bukkit::new(parent)))
     }
 
@@ -150,9 +152,11 @@ impl Object {
         }
     }
 
-    pub fn as_bukkit(&self) -> Option<&Bukkit> {
+    pub fn as_bukkit(&self) -> Option<Arc<Bukkit>> {
         if let Self::Bukkit(v) = self {
-            Some(v)
+            Some(v.clone())
+        } else if let Self::WeakBukkit(v) = self {
+            v.upgrade()
         } else {
             None
         }
@@ -234,27 +238,27 @@ impl Object {
 #[derive(Debug, Clone)]
 pub struct Bukkit {
     // the scope where the bukkit is defined is the parent scope
-    inner_scope: SharedScope,
+    inner_scope: Arc<Scope>,
 }
 
 impl Bukkit {
-    pub fn new(parent: SharedScope) -> Self {
+    pub fn new(parent: Weak<Scope>) -> Self {
         Self {
-            inner_scope: SharedScope::new(Some(parent)),
+            inner_scope: Arc::new(Scope::new(parent)),
         }
     }
 
-    pub fn from_scope(inner_scope: SharedScope) -> Self {
+    pub fn from_scope(inner_scope: Arc<Scope>) -> Self {
         Self { inner_scope }
     }
 
-    pub fn scope(&self) -> &SharedScope {
+    pub fn scope(&self) -> &Arc<Scope> {
         &self.inner_scope
     }
 }
 
 impl Deref for Bukkit {
-    type Target = SharedScope;
+    type Target = Arc<Scope>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner_scope
@@ -267,7 +271,7 @@ impl DerefMut for Bukkit {
     }
 }
 
-pub type BuiltinFn = fn(&mut Interpreter, &SharedScope) -> Result<Object, interpreter::Error>;
+pub type BuiltinFn = fn(&mut Interpreter, &Arc<Scope>) -> Result<Object, interpreter::Error>;
 
 #[derive(Debug, Clone)]
 pub enum Funkshun {
