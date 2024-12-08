@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::thread;
 
-use crate::interpreter::Error;
-use crate::loc_here;
+use crate::interpreter::{Error, Interpreter};
 use crate::object::Object;
 use crate::scope::Scope;
+use crate::{ast, loc_here};
 
 macro_rules! lit {
     ($name:expr) => {
@@ -19,13 +20,68 @@ macro_rules! lit {
 
 pub type Module = LazyLock<Result<Arc<Scope>, Error>>;
 
-pub static MODULES: LazyLock<HashMap<&'static str, &'static Module>> =
-    LazyLock::new(|| {
-        let mut map = HashMap::new();
-        map.insert("STRING", &STRING);
-        map.insert("FILE", &FILE);
-        map
-    });
+pub static MODULES: LazyLock<HashMap<&'static str, &'static Module>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    map.insert("STRING", &STRING);
+    map.insert("FILE", &FILE);
+    map.insert("THREADZ", &THREADZ);
+    map
+});
+
+pub static THREADZ: Module = LazyLock::new(|| {
+    let scope = Arc::new(Scope::new(Weak::new()));
+    type Handle = Mutex<Option<thread::JoinHandle<Object>>>;
+
+    scope.define_builtin(
+        "START",
+        loc_here!(),
+        [lit!("func"), lit!("param")],
+        |_, scope| {
+            let scope = scope.clone();
+            let handle = thread::spawn(move || {
+                let mut me = Interpreter {};
+                let res = me.eval_call(
+                    &loc_here!(),
+                    &scope,
+                    &lit!("func"),
+                    &[ast::Expr::Ident(lit!("param"))],
+                    &scope,
+                );
+                match res {
+                    Ok(value) => value,
+                    Err(err) => {
+                        eprintln!("[ERROR] {}", err);
+                        Object::Noob
+                    }
+                }
+            });
+
+            Ok(Object::Blob(Arc::new(Mutex::new(Some(handle)))))
+        },
+    )?;
+
+    scope.define_builtin("JOINZ", loc_here!(), [lit!("handle")], |me, scope| {
+        let handle = me.eval_ident(&lit!("handle"), scope)?;
+        let Some(handle) = handle.as_blob::<Handle>() else {
+            return Err(Error::Custom(
+                loc_here!(),
+                format!(
+                    "expected `handle` to be a `Handle<Object>`, but got {}",
+                    handle.typ()
+                ),
+            ));
+        };
+
+        let mut lock = handle.lock().unwrap();
+        let res = lock
+            .take()
+            .and_then(|handle| handle.join().ok())
+            .unwrap_or_default();
+        Ok(res)
+    })?;
+
+    Ok(scope)
+});
 
 pub static STRING: Module = LazyLock::new(|| {
     let scope = Arc::new(Scope::new(Weak::new()));
@@ -157,7 +213,8 @@ pub static FILE: Module = LazyLock::new(|| {
         };
 
         let mut buf = String::new();
-        file.read_to_string(&mut buf)
+        file
+            .read_to_string(&mut buf)
             .map_err(|err| Error::Custom(loc_here!(), err.to_string()))?;
 
         Ok(Object::Yarn(buf.into()))
