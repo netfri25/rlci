@@ -9,8 +9,6 @@ use crate::{ast::*, bindings, parser, scope};
 
 use crate::scope::Scope;
 
-// TODO: make sure that casting bukkits to strings with the `to_string` method is implemented
-
 #[derive(Debug, Default)]
 pub struct Interpreter {}
 
