@@ -195,7 +195,7 @@ pub struct Break {
 #[derive(Debug, Display, Clone, PartialEq)]
 #[display("SKIP DIS")]
 pub struct Continue {
-    pub loc: Loc
+    pub loc: Loc,
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
@@ -329,7 +329,7 @@ pub enum Expr {
     String(StringLit),
     Noob(NoobLit),
     Ident(Ident),
-    FuncCall(FuncCall),
+    FuncCall(Arc<FuncCall>),
     UnaryOp(UnaryOp),
     BinaryOp(BinaryOp),
     NaryOp(NaryOp),
@@ -366,7 +366,7 @@ pub struct CastExpr {
 }
 
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display("{scope} IZ {name} {} MKAY", display_args(true, params))]
+#[display("{scope} IZ {name}{} MKAY", display_args(true, params))]
 pub struct FuncCall {
     pub loc: Loc,
     pub scope: Ident,

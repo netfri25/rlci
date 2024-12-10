@@ -39,7 +39,7 @@ pub static THREADZ: Module = LazyLock::new(|| {
         |_, scope| {
             let scope = scope.clone();
             let handle = thread::spawn(move || {
-                let mut me = Interpreter {};
+                let mut me = Interpreter::default();
                 let res = me.eval_call(
                     &loc_here!(),
                     &scope,
@@ -213,8 +213,7 @@ pub static FILE: Module = LazyLock::new(|| {
         };
 
         let mut buf = String::new();
-        file
-            .read_to_string(&mut buf)
+        file.read_to_string(&mut buf)
             .map_err(|err| Error::Custom(loc_here!(), err.to_string()))?;
 
         Ok(Object::Yarn(buf.into()))

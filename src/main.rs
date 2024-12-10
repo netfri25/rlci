@@ -8,19 +8,19 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod ast;
+mod bindings;
 mod interpreter;
 mod lexer;
 mod object;
 mod parser;
 mod scope;
 mod token;
-mod bindings;
 
 #[derive(Parser, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[command(version, about, long_about = None)]
 pub enum Args {
     Lex { path: PathBuf },
-    Parse { path: PathBuf } ,
+    Parse { path: PathBuf },
     Run { path: PathBuf },
     Repl,
 }
@@ -31,10 +31,18 @@ fn main() {
     match args {
         Args::Lex { path } => lex(&expand_home(&path)),
         Args::Parse { path } => parse(&expand_home(&path)),
-        Args::Run { path } => Interpreter::default()
-            .eval_file(&expand_home(&path))
-            .map(drop)
-            .unwrap_or_else(|err| eprintln!("[ERROR] {}", err)),
+        Args::Run { path } => {
+            let mut interpreter = Interpreter::default();
+            if let Err(err) = interpreter.eval_file(&expand_home(&path)) {
+                for func_call in interpreter.call_stack {
+                    eprintln!(
+                        "[\x1b[33mTRACE\x1b[0m] {}\n    in: {}\n",
+                        func_call.loc, func_call
+                    )
+                }
+                eprintln!("[\x1b[31mERROR\x1b[0m] {}", err);
+            }
+        }
         Args::Repl => todo!("REPL"),
     }
 }

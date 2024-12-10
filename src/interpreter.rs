@@ -10,7 +10,9 @@ use crate::{ast::*, bindings, parser, scope};
 use crate::scope::Scope;
 
 #[derive(Debug, Default)]
-pub struct Interpreter {}
+pub struct Interpreter {
+    pub call_stack: Vec<Arc<FuncCall>>,
+}
 
 impl Interpreter {
     pub fn eval_file(&mut self, path: &(impl AsRef<Path> + ?Sized)) -> Result<Arc<Scope>, Error> {
@@ -71,7 +73,12 @@ impl Interpreter {
         }
     }
 
-    pub fn eval_return_stmt(&mut self, loc: &Loc, expr: &Expr, scope: &Arc<Scope>) -> Result<(), Error> {
+    pub fn eval_return_stmt(
+        &mut self,
+        loc: &Loc,
+        expr: &Expr,
+        scope: &Arc<Scope>,
+    ) -> Result<(), Error> {
         let res = self.eval_expr(expr, scope)?;
         scope.set_it(res);
         Err(Error::Return(loc.clone(), scope.get_it()))
@@ -269,13 +276,15 @@ impl Interpreter {
                         func,
                         ..
                     } => {
-                        let value = self.eval_func_call(
-                            loc,
-                            scope_ident,
-                            func,
-                            &[Expr::Ident(target.clone())],
-                            &scope,
-                        )?;
+                        let func_call = FuncCall {
+                            loc: loc.clone(),
+                            scope: scope_ident.clone(),
+                            name: func.clone(),
+                            params: Arc::from([Expr::Ident(target.clone())]),
+                        };
+
+                        let value = self.eval_func_call(&Arc::new(func_call), &scope)?;
+
                         self.assign(target, value, &scope)?;
                     }
                 }
@@ -310,20 +319,26 @@ impl Interpreter {
         self.define(name, object.clone(), define_scope, &object_scope)?;
 
         object_scope
-            .define("ME".to_string(), Object::WeakBukkit(Arc::downgrade(&bukkit)))
+            .define(
+                "ME".to_string(),
+                Object::WeakBukkit(Arc::downgrade(&bukkit)),
+            )
             .map_err(|err| Error::Scope(loc.clone(), err))?;
 
         if let Some(inherit_ident) = inherit {
             let parent_object = match self.eval_ident(inherit_ident, scope)? {
                 Object::Bukkit(bukkit) => Object::WeakBukkit(Arc::downgrade(&bukkit)),
-                other => other
+                other => other,
             };
 
             if let Some(bukkit) = parent_object.as_bukkit() {
                 for (name, object) in bukkit.scope().vars().iter() {
                     if let Some(funkshun) = object.as_funkshun() {
                         object_scope
-                            .define(name.clone(), Object::Funkshun(funkshun.clone(), Arc::downgrade(&object_scope)))
+                            .define(
+                                name.clone(),
+                                Object::Funkshun(funkshun.clone(), Arc::downgrade(&object_scope)),
+                            )
                             .ok();
                     }
                 }
@@ -362,12 +377,7 @@ impl Interpreter {
             }
             Expr::Noob(NoobLit { .. }) => Ok(Object::Noob),
             Expr::Ident(ident) => self.eval_ident(ident, scope),
-            Expr::FuncCall(FuncCall {
-                loc,
-                scope: scope_ident,
-                name,
-                params,
-            }) => self.eval_func_call(loc, scope_ident, name, params, scope),
+            Expr::FuncCall(func_call) => self.eval_func_call(func_call, scope),
             Expr::UnaryOp(unary_op) => self.eval_unary_op(unary_op, scope),
             Expr::BinaryOp(binary_op) => self.eval_binary_op(binary_op, scope),
             Expr::NaryOp(n_ary_op) => self.eval_n_ary_op(n_ary_op, scope),
@@ -433,14 +443,20 @@ impl Interpreter {
 
     pub fn eval_func_call(
         &mut self,
-        loc: &Loc,
-        scope_ident: &Ident,
-        name: &Ident,
-        params: &[Expr],
+        func_call: &Arc<FuncCall>,
         outer_scope: &Arc<Scope>,
     ) -> Result<Object, Error> {
-        let scope = self.eval_scope(scope_ident, outer_scope)?;
-        self.eval_call(loc, &scope, name, params, outer_scope)
+        let scope = self.eval_scope(&func_call.scope, outer_scope)?;
+        self.call_stack.push(func_call.clone());
+        let object = self.eval_call(
+            &func_call.loc,
+            &scope,
+            &func_call.name,
+            &func_call.params,
+            outer_scope,
+        )?;
+        self.call_stack.pop();
+        Ok(object)
     }
 
     pub fn eval_call(
@@ -918,8 +934,8 @@ impl Interpreter {
     ) -> Result<(), Error> {
         match target {
             Ident::Lit { name, loc } => define_scope
-                    .define(name.to_string(), value)
-                    .map_err(|err| Error::Scope(loc.clone(), err)),
+                .define(name.to_string(), value)
+                .map_err(|err| Error::Scope(loc.clone(), err)),
 
             Ident::Srs { expr, loc } => {
                 let object = self.eval_expr(expr, scope)?;

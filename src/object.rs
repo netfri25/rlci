@@ -115,7 +115,7 @@ impl Object {
                 args: Default::default(),
                 block: Default::default(),
             }),
-            Weak::default()
+            Weak::default(),
         )
     }
 

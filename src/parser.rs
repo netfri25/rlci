@@ -486,48 +486,49 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_func_call_expr(&mut self, scope: Ident) -> Option<FuncCall> {
+    fn parse_func_call_expr(&mut self, scope: Ident) -> Option<Arc<FuncCall>> {
         let loc = self.expect(TokenKind::Iz)?.loc;
         let name = self.parse_ident()?;
         if self.peek() == TokenKind::NewLine {
-            return Some(FuncCall {
+            return Some(Arc::new(FuncCall {
                 loc,
                 scope,
                 name,
                 params: Default::default(),
-            });
+            }));
         }
 
         let kind = self.expect_many(&[TokenKind::Yr, TokenKind::Mkay])?.kind;
         if kind == TokenKind::Mkay {
-            return Some(FuncCall {
+            return Some(Arc::new(FuncCall {
                 loc,
                 scope,
                 name,
                 params: Default::default(),
-            });
+            }));
         }
 
         let mut params = Vec::new();
         params.push(self.parse_expr()?);
 
         if self.peek() != TokenKind::NewLine {
-            while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind {
+            while let TokenKind::AnYr = self.expect_many(&[TokenKind::AnYr, TokenKind::Mkay])?.kind
+            {
                 let expr = self.parse_expr()?;
                 params.push(expr);
                 if self.peek() == TokenKind::NewLine {
-                    break
+                    break;
                 }
             }
         }
 
         let params = params.into();
-        Some(FuncCall {
+        Some(Arc::new(FuncCall {
             loc,
             scope,
             name,
             params,
-        })
+        }))
     }
 
     fn parse_cast_expr(&mut self) -> Option<CastExpr> {
@@ -567,14 +568,38 @@ impl<'a> Parser<'a> {
     fn parse_type(&mut self) -> Option<Type> {
         let Token { loc, kind, .. } = self.expect_many(TokenKind::TYPES)?;
         let typ = match kind {
-            TokenKind::Noob => Type { loc, typ: ObjectType::Noob },
-            TokenKind::Troof => Type { loc, typ: ObjectType::Troof },
-            TokenKind::Numbr => Type { loc, typ: ObjectType::Numbr },
-            TokenKind::Numbar => Type { loc, typ: ObjectType::Numbar },
-            TokenKind::Yarn => Type { loc, typ: ObjectType::Yarn },
-            TokenKind::Bukkit => Type { loc, typ: ObjectType::Bukkit },
-            TokenKind::Funkshun => Type { loc, typ: ObjectType::Funkshun },
-            TokenKind::Blob => Type { loc, typ: ObjectType::Blob },
+            TokenKind::Noob => Type {
+                loc,
+                typ: ObjectType::Noob,
+            },
+            TokenKind::Troof => Type {
+                loc,
+                typ: ObjectType::Troof,
+            },
+            TokenKind::Numbr => Type {
+                loc,
+                typ: ObjectType::Numbr,
+            },
+            TokenKind::Numbar => Type {
+                loc,
+                typ: ObjectType::Numbar,
+            },
+            TokenKind::Yarn => Type {
+                loc,
+                typ: ObjectType::Yarn,
+            },
+            TokenKind::Bukkit => Type {
+                loc,
+                typ: ObjectType::Bukkit,
+            },
+            TokenKind::Funkshun => Type {
+                loc,
+                typ: ObjectType::Funkshun,
+            },
+            TokenKind::Blob => Type {
+                loc,
+                typ: ObjectType::Blob,
+            },
             _ => unreachable!(),
         };
 
@@ -932,7 +957,10 @@ mod tests {
                     loc: loc!(),
                     scope: ident("I"),
                     name: ident("var"),
-                    init: init_type(Type { loc: loc!(), typ: ObjectType::Troof }),
+                    init: init_type(Type {
+                        loc: loc!(),
+                        typ: ObjectType::Troof,
+                    }),
                 }),
                 Stmt::Declare(Declare {
                     loc: loc!(),
