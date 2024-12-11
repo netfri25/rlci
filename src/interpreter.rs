@@ -638,6 +638,49 @@ impl Interpreter {
                 }
             }
 
+            BinaryOpKind::Pow => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc: loc.clone(),
+                        kind,
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
+                    Ok(Object::Numbar(lhs.powf(rhs)))
+                } else {
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    let rhs = rhs.try_into().map_err(|_| Error::NegativeIntegerPower(loc.clone(), rhs))?;
+                    Ok(Object::Numbr(lhs.pow(rhs)))
+                }
+            }
+
+            BinaryOpKind::Log => {
+                if !is_lhs_num || !is_rhs_num {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc: loc.clone(),
+                        kind,
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
+                    });
+                }
+
+                if is_lhs_float || is_rhs_float {
+                    let lhs = self.cast_float(loc, &lhs)?;
+                    let rhs = self.cast_float(loc, &rhs)?;
+                    Ok(Object::Numbar(lhs.log(rhs)))
+                } else {
+                    let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                    let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                    Ok(Object::Numbr(lhs.ilog(rhs) as i64))
+                }
+            }
+
             BinaryOpKind::Max => {
                 if let (Object::Yarn(lhs), Object::Yarn(rhs)) = (&lhs, &rhs) {
                     Ok(Object::Yarn(lhs.clone().max(rhs.clone())))
@@ -1109,6 +1152,9 @@ pub enum Error {
         lhs: ObjectType,
         rhs: ObjectType,
     },
+
+    #[error("{0}: NUMBR POWR expects exponent to be a non negative integer, but got {1}")]
+    NegativeIntegerPower(Loc, i64),
 
     #[error("{0}: unclosed parentheses in string literal")]
     UnclosedParenLiteral(Loc),

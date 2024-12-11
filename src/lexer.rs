@@ -167,6 +167,8 @@ impl<'a> Lexer<'a> {
             ("MEBBE", Mebbe),
             ("MKAY", Mkay),
             ("MOD OF", ModOf),
+            ("POWR OF", PowrOf),
+            ("LOLG OF", LolgOf),
             ("NERFIN", Nerfin),
             ("NOOB", Noob),
             ("NOT", Not),

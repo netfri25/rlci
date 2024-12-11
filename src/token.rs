@@ -66,6 +66,8 @@ pub enum TokenKind {
     ProduktOf,  // multiplication
     QuoshuntOf, // division
     ModOf,      // modulo
+    PowrOf,     // power
+    LolgOf,     // log
     BiggrOf,    // max
     SmallrOf,   // min
 
@@ -168,6 +170,8 @@ impl TokenKind {
                 | ProduktOf
                 | QuoshuntOf
                 | ModOf
+                | PowrOf
+                | LolgOf
                 | BiggrOf
                 | SmallrOf
                 | BothOf
@@ -222,6 +226,8 @@ impl TokenKind {
             TokenKind::ProduktOf => "PRODUKT OF",
             TokenKind::QuoshuntOf => "QUOSHUNT OF",
             TokenKind::ModOf => "MOD OF",
+            TokenKind::PowrOf => "POWR OF",
+            TokenKind::LolgOf => "LOLG OF",
             TokenKind::BiggrOf => "BIGGR OF",
             TokenKind::SmallrOf => "SMALLR OF",
             TokenKind::BothOf => "BOTH OF",

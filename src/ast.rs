@@ -423,6 +423,12 @@ pub enum BinaryOpKind {
     #[display("MOD OF")]
     Mod,
 
+    #[display("POWR OF")]
+    Pow,
+
+    #[display("LOLG OF")]
+    Log,
+
     #[display("BIGGR OF")]
     Max,
 

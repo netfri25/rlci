@@ -681,6 +681,8 @@ impl<'a> Parser<'a> {
             ProduktOf => BinaryOpKind::Mul,
             QuoshuntOf => BinaryOpKind::Div,
             ModOf => BinaryOpKind::Mod,
+            PowrOf => BinaryOpKind::Pow,
+            LolgOf => BinaryOpKind::Log,
             BiggrOf => BinaryOpKind::Max,
             SmallrOf => BinaryOpKind::Min,
             BothOf => BinaryOpKind::And,
