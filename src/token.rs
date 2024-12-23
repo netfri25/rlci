@@ -281,7 +281,7 @@ impl TokenKind {
 }
 
 // WARN: `Loc == Loc` always returns true
-#[derive(Debug, Clone, Eq, PartialOrd, Ord, thiserror::Error)]
+#[derive(Debug, Clone, Eq, PartialOrd, Ord)]
 pub struct Loc {
     path: Arc<Path>,
     row: u32,
