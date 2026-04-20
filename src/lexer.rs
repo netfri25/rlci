@@ -198,6 +198,7 @@ impl<'a> Lexer<'a> {
             ("YA RLY", YaRly),
             ("YARN", Yarn),
             ("YR", Yr),
+            ("XOR OF", XorOf),
             ("'Z", ApostZ),
         ]);
 

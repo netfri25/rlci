@@ -435,6 +435,9 @@ pub enum BinaryOpKind {
     #[display("SMALLR OF")]
     Min,
 
+    #[display("XOR OF")]
+    BitXor,
+
     #[display("BOTH OF")]
     And,
 

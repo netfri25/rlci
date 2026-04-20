@@ -70,6 +70,7 @@ pub enum TokenKind {
     LolgOf,     // log
     BiggrOf,    // max
     SmallrOf,   // min
+    XorOf,      // xor
 
     // logical
     BothOf,   // &&
@@ -174,6 +175,7 @@ impl TokenKind {
                 | LolgOf
                 | BiggrOf
                 | SmallrOf
+                | XorOf
                 | BothOf
                 | EitherOf
                 | WonOf
@@ -230,6 +232,7 @@ impl TokenKind {
             TokenKind::LolgOf => "LOLG OF",
             TokenKind::BiggrOf => "BIGGR OF",
             TokenKind::SmallrOf => "SMALLR OF",
+            TokenKind::XorOf => "XOR OF",
             TokenKind::BothOf => "BOTH OF",
             TokenKind::EitherOf => "EITHER OF",
             TokenKind::WonOf => "WON OF",

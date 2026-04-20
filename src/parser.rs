@@ -685,6 +685,7 @@ impl<'a> Parser<'a> {
             LolgOf => BinaryOpKind::Log,
             BiggrOf => BinaryOpKind::Max,
             SmallrOf => BinaryOpKind::Min,
+            XorOf => BinaryOpKind::BitXor,
             BothOf => BinaryOpKind::And,
             EitherOf => BinaryOpKind::Or,
             WonOf => BinaryOpKind::Xor,
@@ -772,7 +773,7 @@ impl<'a> Parser<'a> {
     }
 
     #[must_use]
-    fn peek_token(&mut self) -> &Token {
+    fn peek_token(&mut self) -> &Token<'_> {
         if self.peek_token.is_none() {
             self.peek_token = Some(self.next_token())
         }

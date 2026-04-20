@@ -74,7 +74,7 @@ fn parse(path: &Path) {
     eprintln!("{:#?}", module);
 }
 
-fn expand_home(path: &Path) -> Cow<Path> {
+fn expand_home(path: &Path) -> Cow<'_, Path> {
     if !path.starts_with("~/") {
         return path.into();
     }

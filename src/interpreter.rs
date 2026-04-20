@@ -731,6 +731,21 @@ impl Interpreter {
                 }
             }
 
+            BinaryOpKind::BitXor => {
+                if !lhs.is_numbr() || !rhs.is_numbr() {
+                    return Err(Error::CantApplyBinaryOp {
+                        loc: loc.clone(),
+                        kind,
+                        lhs: lhs.typ(),
+                        rhs: rhs.typ(),
+                    });
+                }
+
+                let lhs = lhs.as_numbr().expect("lhs is known to be a NUMBR");
+                let rhs = rhs.as_numbr().expect("rhs is known to be a NUMBR");
+                Ok(Object::Numbr(lhs ^ rhs))
+            }
+
             BinaryOpKind::And => {
                 let lhs = self.cast_bool(&lhs);
                 let rhs = self.cast_bool(&rhs);
